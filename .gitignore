@@ -1,0 +1,4 @@
+data/
+s3/
+backups/
+deploy/.env
