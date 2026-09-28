@@ -3,12 +3,12 @@ title: "Tekton — Functional specification"
 refines: RFD 1 (docs/rfd-0001.md)
 companion: docs/technical-spec.md
 state: draft
-date: 2026-09-27
+date: 2026-09-28
 ---
 
 # Tekton — Functional specification
 
-This document describes **what Tekton does** for its user, step by step. [RFD 1](rfd-0001.md) is the base: it sets the goals, the legal framework and the high-level architecture. The [technical specification](technical-spec.md) describes **how** it is built.
+This document describes **what Tekton does** for its user, step by step. [RFD 1](rfd-0001.md) is the base: it sets the goals, the legal framework and the high-level architecture. The [technical specification](technical-spec.md) (TS) describes **how** it is built.
 
 The spec covers the full 9-step vision. Items marked **[v1]** are in the first release; everything else is planned for later releases (see [§14 Release scope](#14-release-scope)). Identifiers in `code` (decision keys, enum values) are the ones stored and exchanged by the system; the interface shows translated labels for them.
 
@@ -19,7 +19,7 @@ The spec covers the full 9-step vision. Items marked **[v1]** are in the first r
 3. **The operator decides.** Agents propose; a decision is recorded only when the operator confirms it. Agents never sign and never pay.
 4. **Every claim has a source.** Anything an agent asserts in the interface carries a source and a verification date. An unsourced claim is dropped before it reaches the interface, and the run is marked *partial*.
 5. **Human-friendly first.** Tekton optimizes for the operator's clarity and effort, not for the smallest amount of software. Each screen answers three questions: *where am I, what is blocking me, what should I do next*.
-6. **Personal data stays local by default.** Personal documents, and everything derived from them, leave the workstation (for a cloud model) only with the operator's consent (§12).
+6. **Personal data stays local by default.** Personal documents, and everything derived from them, leave the workstation (for a cloud model) only with the operator's consent (§12). Agents that browse the web see only public data and the parts of the brief they need.
 7. **Law 169/2026 only.** Projects whose applications started before 25 August 2026 (under Law 50/1991) are out of scope. Documents issued under the old law that turn up in a new project are handled by §4.5.
 
 ## 2. Glossary (EN – RO)
@@ -31,10 +31,10 @@ The spec covers the full 9-step vision. Items marked **[v1]** are in the first r
 | Run | Rulare | One piece of agent work on one subject; it may span several sessions when it waits for the operator |
 | Watcher | Supraveghetor programat | A scheduled job that checks something periodically (§10) |
 | Operator task | Sarcină pentru operator | Something only the operator can do; closed with proof |
-| Approval request | Cerere de aprobare | An outbound action waiting for the operator's yes/no before it happens (§8) |
+| Approval request | Cerere de aprobare | An outbound action or privacy release waiting for the operator's yes/no (§8) |
 | Decision | Decizie | A typed, versioned value set by the operator (e.g. `casa.persoane`) with rationale and sources |
 | Proposal | Propunere | A value an agent suggests for a decision; the operator accepts, edits or rejects it |
-| Derived value | Valoare calculată | A value Tekton computes from decisions and rules (e.g. land budget, footprint) |
+| Derived value | Valoare calculată | A value Tekton computes from decisions, facts and rules (e.g. land budget, price per m²) |
 | Brief | Temă / program | What house the operator wants: people, rooms, levels, floor area |
 | Locality | Localitate | A village or town (SIRUTA code); belongs to a UAT |
 | UAT | UAT (comună / oraș / municipiu) | The administrative unit with the town hall, PUG and taxes |
@@ -52,6 +52,7 @@ The spec covers the full 9-step vision. Items marked **[v1]** are in the first r
 | Land occupancy ratio | POT | Max share of the plot covered by the building footprint |
 | Floor area ratio | CUT | Max ratio of total floor area to plot area |
 | Gross floor area | Suprafață desfășurată | Sum of all floor areas |
+| Footprint | Amprentă la sol | Area of the plot covered by the building |
 | Land registration | Intabulare | Registering ownership in the land book |
 | Handover | Recepție | Acceptance of works: at completion, and final after the warranty |
 | Knowledge base | Bază de cunoștințe publice | `public_knowledge/`: public rules with source and date (§11) |
@@ -60,12 +61,12 @@ The spec covers the full 9-step vision. Items marked **[v1]** are in the first r
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| **Operator** | Decide, approve, sign, pay, call, visit, hold accounts, upload proof, change a privacy class | — |
-| **Agents** | Research the web, search listing sites, read documents their profile allows, compute checks, draft emails and documents, propose decisions, propose knowledge updates, create operator tasks | Sign, pay, phone, log into the operator's accounts, send anything without the rule in §9, record a decision, lower a privacy class, read personal data outside their profile |
+| **Operator** | Decide, approve, sign, pay, call, visit, hold accounts, upload proof, lower a privacy class, dismiss a plot | — |
+| **Agents** | Research the web, search listing sites, read documents their privacy tier allows, compute checks, draft emails and documents, propose decisions, propose knowledge updates, create operator tasks | Sign, pay, phone, log into the operator's accounts, send anything without the rule in §9, record a decision, change a plot's status, lower a privacy class, read data outside their tier |
 | **Watchers** | Start agent runs or system checks on a schedule | Same limits as agents |
 | **External parties** | Town hall, notary, bank, architect, engineers, builders, utilities: reached through the project mailbox or by the operator | — |
 
-One operator per instance [v1]. Every event records its author (operator, a named agent run, a watcher, or the system), so a second person (e.g. a partner) can be added later without changing the history.
+One operator per instance [v1]. Every event records its author (operator, a named agent run, a scheduled job, or the system), so a second person (e.g. a partner) can be added later without changing the history.
 
 ## 4. The workflow
 
@@ -89,26 +90,28 @@ flowchart TD
 
 ### 4.1 Step mechanics [v1]
 
-**States:** `blocked`, `available`, `in_progress`, `done`, `needs_revalidation`.
+**States:** `blocked`, `available`, `in_progress`, `done`, `needs_revalidation`, `not_applicable` (the branch of step 7 that was not chosen).
 
 | From | What happens | To |
 | --- | --- | --- |
-| `blocked` | All earlier steps it depends on are `done` | `available` |
+| `blocked` | Every step it depends on is `done` (for step 8: `7a` **or** `7n`) | `available` |
 | `available` | The operator sets a decision, or an agent run starts on the step | `in_progress` |
 | `in_progress` | The operator presses **Done** (allowed only when the step can complete, below) | `done` |
-| `done` | The operator reopens the step | `in_progress`; dependent steps → `needs_revalidation` |
-| `done` | A decision or derived value it depends on changes | `needs_revalidation` |
-| `needs_revalidation` | The checks re-run, the operator reviews the impact and confirms | `done` |
+| `done` | The operator reopens the step, or edits one of its decisions | `in_progress`; dependent `done` steps → `needs_revalidation` |
+| `done` | A decision it depends on changes, a check it owns changes result, or an earlier step leaves `done` | `needs_revalidation` |
+| `needs_revalidation` | The operator reviews the impact and confirms | `done` |
 | `needs_revalidation` | The operator changes a decision in the step | `in_progress` |
+| any | `proiect.procedura` selects the other branch of step 7 | `not_applicable` |
 
-- **Can complete** when every required decision is set, every required check passes, no proposal on a required decision is pending, and no required operator task is open. Tekton computes this and shows the blocking items; the Done button explains why it is disabled.
+- While an earlier step is not `done`, a later step is **shown** as blocked, but its recorded state (e.g. `needs_revalidation`) is kept and returns when the earlier step is done again.
+- **Can complete** when every required decision is set, every required check passes, no proposal on a required decision is pending, and no required operator task is open. For decisions per plot or per locality the step says which subjects count: step 2 needs at least one validated locality, step 4 needs the chosen plot. Tekton computes this and lists the blocking items; the Done button explains why it cannot be pressed.
 - **Each step screen shows:**
   - the earlier decisions it depends on
   - its decisions, each with any pending agent proposal next to it (§4.12)
   - derived values and checks, with their formula and sources
   - agent findings with sources, and the runs in progress
   - the operator tasks and approval requests for this step
-- **Going back:** the impact is shown concretely, e.g. "2 plots on the shortlist are now over budget", "notification eligibility lost: floor area 162 m² > 150 m²".
+- **Going back:** before reopening a step or changing a decision, the screen previews the impact, e.g. "2 plots on the shortlist would be over budget", "notification eligibility would be lost: floor area 162 m² > 150 m²".
 - **Legal cost of going back:** flagged explicitly. After the permit, a design change needs a modification permit (autorizație de modificare), with no new permit fee if it is within the original permit's validity.
 - **Steps not built yet** (outside v1) appear on the map as *coming later*, with a short description; they are not a workflow state.
 - **History:** an append-only event list. Nothing is deleted; a change is a new version.
@@ -121,29 +124,32 @@ flowchart TD
 
 | Key | Type | Req. | Notes |
 | --- | --- | --- | --- |
+| `casa.tip` | enum `unifamiliala`, `alta` | yes | Single-family house or other |
 | `casa.persoane` | integer ≥ 1 | yes | People living in the house |
 | `casa.camere` | room list | yes | Each room: kind (`dormitor`, `living`, `bucatarie`, `baie`, `birou`, `depozitare`, `altele`) and target area |
 | `casa.regim_inaltime` | enum `p`, `d_p`, `p_m`, `p_1`, `d_p_1`, `p_1_m` | yes | Levels (parter, demisol + parter, mansardă, etaj) |
 | `casa.subsol` | boolean | yes | Basement |
 | `casa.suprafata_desfasurata_mp` | area (m²) | yes | Gross floor area |
+| `casa.amprenta_mp` | area (m²) | yes | Footprint; an agent proposes it from the floor area and levels, with its assumptions |
 | `casa.locuire` | enum `permanenta`, `sezoniera` | yes | Permanent or seasonal |
 | `procedura.tinta` | enum `notificare`, `autorizare`, `indiferent` | yes | Target procedure (§6) |
 | `finantare.venit_net_lunar` | money | no | Household net monthly income, used for the loan ceiling |
 | `finantare.aport` | money | yes | Own funds |
 | `finantare.tip_credit` | enum `ipotecar`, `constructie`, `fara` | yes | Mortgage, construction loan, none |
-| `finantare.credit_max` | money | yes (0 when `fara`) | Bank lending ceiling |
+| `finantare.credit_max` | money | when a loan is used | Bank lending ceiling |
 | `buget.categorii` | allocation per category | yes | Planned amount per budget category (below) |
 
-**Derived values:** `casa.amprenta_mp` (footprint, from floor area and levels), `buget.total` (own funds + loan ceiling), `buget.teren_max` (the land category of `buget.categorii`), `buget.rezerva_pct` (the reserve category as a share of the total). The footprint and the total may be overridden by the operator (§4.12).
+**Derived values:** `buget.total` (own funds + loan ceiling; the operator may override it), `buget.teren_max` (the land category of `buget.categorii`), `buget.rezerva_pct` (the reserve category as a share of the total).
 
-**Checks:** the allocation adds up to at most `buget.total`; the reserve is between 10% and 15%; the rooms fit in the floor area.
+**Checks:** the allocation adds up to at most `buget.total`; the reserve is between 10% and 15%; the rooms fit in the floor area. While the operator edits the allocation, the totals and the reserve share update live.
 
 **Budget categories:** `teren` (land); `notar_taxe` (notary, taxes and land registration); `proiectare_studii` (architect, topographic survey, geotechnical study, engineers); `avize_taxe` (approvals and fees); `racordari` (utility connections); `constructie` (construction, by stage later); `curte` (yard and fences); `mobilare` (furnishing, optional); `rezerva` (reserve, 10–15%).
 
 **What agents do**
 
-- Estimate costs per category for the brief and the region, with sources: cost per m² for construction, notary fees, design fees, utility connection costs. They are proposed as the planned amounts.
-- Research lending: current mortgage offers, the maximum loan for the declared income, down payment rules. Propose `finantare.credit_max` with sources.
+- Research costs per category for the brief and the region (cost per m² for construction, notary fees, design fees, utility connection costs), with sources, and propose the planned amounts. The web research sees only the brief and the region; a separate agent without web access combines the results with the operator's finances.
+- Research lending: current mortgage offers and down payment rules from bank sites; a separate agent without web access applies them to the declared income and proposes `finantare.credit_max`.
+- Propose the footprint from the floor area and levels, stating how mansard and demisol levels were counted.
 - Compute notification eligibility from the brief (§6) and explain which fields break it.
 
 **Operator tasks:** talk to 1–3 banks for a pre-approval (pre-aprobare). The agent prepares the documents list and the questions; the proof is the bank's written offer or a meeting-result form.
@@ -154,48 +160,57 @@ flowchart TD
 
 **Decisions:** `zona.criterii` (max travel times to the city, hospital, school, transport; required), `zona.localitati` (ranked list of candidate localities; required).
 
-**Locality entity (Localitate):** SIRUTA code, name, UAT and its type (`comuna`, `oras`, `municipiu`), distances and travel times, known utilities (water, sewage, gas, electricity, internet), protected zones known, price per m² (a derived value: median, spread, sample size, date, links), validation status.
+**Locality entity (Localitate):** SIRUTA code, name, UAT and its type (`comuna`, `oras`, `municipiu`), whether the UAT is in a metropolitan area, distances and travel times, known utilities (water, sewage, gas, electricity, internet), known protected zones, price per m², validation status.
+
+- Localities come from the national SIRUTA list. The operator can add one by name; agents add neighbours of the chosen ones.
+- **Price per m²** is computed by Tekton from the listing samples agents collect (price, area, intravilan land only, link, date): median, spread and sample size, shown with every listing behind it.
 
 **What agents do**
 
-- Compute distances and travel times from OpenStreetMap data: to the city, hospitals, schools, transport, shops.
-- **Collect land listings from listing sites** (imobiliare.ro, OLX, storia, and others) per locality, within the site limits of §10. Compute the price per m² (median, spread, sample size) with the date and a link to each listing.
+- Compute distances and travel times from OpenStreetMap data (a system job): to the city, hospitals, schools, transport, shops.
+- **Collect land listings from listing sites** (imobiliare.ro, OLX, storia, and others) per locality, within the site limits of §10, and store them as samples.
 - Fetch the UAT's PUG/RLU into the knowledge base if missing (§11).
-- **Validate each locality:**
-  - *minimum plot needed* = max(footprint ÷ POT max, floor area ÷ CUT max, minimum lot from the RLU)
-  - at this step the zone of a future plot is unknown, so the rules of the most permissive residential zone of the RLU are used, and the result is marked *de verificat* until step 3 knows the plot's zone
-  - it passes if *price per m² × minimum plot needed ≤ `buget.teren_max`*
-- If `procedura.tinta = notificare`, localities belonging to a `comuna` pass; villages belonging to an `oras` or `municipiu` are marked *de verificat*; the town itself is marked "breaks notification" (§6).
+
+**Validation of each locality:**
+
+- *minimum plot needed for a zone* = max(footprint ÷ POT max, floor area ÷ CUT max, minimum lot of the zone)
+- the zone of a future plot is unknown, so Tekton uses the residential zone of the RLU with the smallest minimum plot, names that zone, and marks the result *de verificat* until step 3 knows the plot's zone
+- it passes if *price per m² × minimum plot needed ≤ `buget.teren_max`*
+- EUR prices are converted at the BNR rate of the day the validation ran; the rate is shown, and a later rate change re-runs the validation only when it moves more than 2%.
+- If `procedura.tinta = notificare`, localities belonging to a `comuna` pass; villages belonging to an `oras` or `municipiu`, and UATs in a metropolitan area, are marked *de verificat*; the town itself is marked "breaks notification" (§6).
 
 **Operator tasks:** optional visit to the area (a task with a checklist the agent prepares).
 
-**Can complete** when at least one locality passes validation and the operator confirms `zona.localitati`.
+**Can complete** when at least one locality in `zona.localitati` passes validation.
 
-**Revalidation link:** a budget or brief change in step 1, or a price-per-m² refresh by the watcher, reruns the validation of every locality.
+**Revalidation link:** a budget or brief change in step 1, or a price-per-m² refresh, re-runs the validation of every locality.
 
 ### 4.4 Step 3 — Search and shortlist (Căutarea și lista scurtă) [v1]
 
 **Goal:** a shortlist of plots, each with a complete sheet (fișă de teren).
 
-**Plot entity (Teren):** listing links (one plot may appear on several sites), locality, location, cadastral number (număr cadastral) if known, area, price, frontage, access, utilities, intravilan status, **RLU zone** (with its source and status: confirmed, inferred, unknown), photos, seller contact. Identity: the cadastral number when known; otherwise site + listing id, merged when the agent finds the same plot elsewhere. Status: `candidat`, `pe_lista_scurta`, `respins` (with reason), `ales`, `cumparat`.
+**Plot entity (Teren):** listing links (one plot may appear on several sites), locality, location, cadastral number (număr cadastral) if known, area, price, frontage, access, utilities, intravilan status, **RLU zone** (with its source and status: confirmed, inferred, unknown), own lot and own access, inside a protected zone, PUG compliance, photos, seller contact.
+
+- **Identity:** the cadastral number when known; otherwise site + listing id. When agents find the same plot on another site, they link the listing to the existing plot; two plots found to be the same are merged, and everything that pointed to either now points to the surviving one.
+- **Status** is shown, never set by agents, and follows from the decisions: `candidat` (found), `pe_lista_scurta` (in `teren.lista_scurta`), `respins` (verdict `nu`, or dismissed by the operator with a reason), `ales` (`teren.ales`), `cumparat` (step 5). A listing removed from its site is flagged, not rejected.
 
 **What agents do**
 
 - Search listing sites continuously in the chosen localities (a watcher, §10). They deduplicate the same plot across sites and track price changes and removals.
-- Determine the plot's RLU zone from the PUG maps or documents; an unknown zone keeps the rule checks *de verificat* and adds a question for the seller or the town hall.
+- Determine the plot's RLU zone, protected zones and PUG compliance from the PUG maps or documents; an unknown value keeps the related checks *de verificat* and adds a question for the seller or the town hall.
 - Filter against the rules: intravilan; RLU rules of the zone (POT, CUT, height, setbacks, minimum lot); area ≥ minimum plot needed; access; utilities; budget; notification eligibility when it is the target.
 - Build the **plot sheet (fișa de teren):**
   - which documents it has (extras CF, cadastru, CU, utility approvals)
   - which documents are still needed
   - the estimated effort and cost to get them
   - a fit score, with each rule linked to its source
-- Draft emails to sellers for missing information (sent under §9).
+- Propose additions to the shortlist, and draft emails to sellers for missing information (sent under §9).
 
 **Operator tasks:** phone the seller (the agent prepares the questions); visit the plot (with a checklist: access, slope, neighbours, water, power lines, photos).
 
-**Decision:** `teren.lista_scurta` (list of plots). **Can complete** when it holds at least one plot.
+**Decision:** `teren.lista_scurta` (list of plots). **Can complete** when it holds at least one plot that is not `respins`.
 
-The Plots screen owns the plot list, map and sheet; step 3 and step 4 open it with the right filters.
+The Plots screen owns the plot list, map and sheet; steps 3 and 4 link to it with the right filters.
 
 ### 4.5 Step 4 — Plot due diligence (Verificarea terenului, înainte de orice avans) [v1]
 
@@ -210,7 +225,7 @@ The Plots screen owns the plot list, map and sheet; step 3 and step 4 open it wi
 - Estimate the utility connection costs (racordări) from the utilities' public tariffs and the distance to the networks.
 - **Choose the right CU type** among the five in Law 169/2026 and fill in the application (cerere) and the documents list.
 - Once the CU is issued, read it: the approvals required (avize), the zone rules, and anything that blocks building. Update the approvals list as data.
-- **Old-law documents:** a CU or approval issued under Law 50/1991 is recorded with `regim_legal = lege_50_1991`. It is informational only; the verdict needs a CU under Law 169/2026.
+- **Old-law documents:** a CU or approval issued under Law 50/1991 is recorded as issued under the old law. It is informational only; the verdict needs a CU under Law 169/2026.
 - Check the plot against the RLU and against notification eligibility (§6).
 - Prepare the questions for an architect's opinion (părerea unui arhitect).
 - Propose the **verdict** with its reasons (each with a source) and risks (each with a cost estimate).
@@ -224,7 +239,7 @@ The Plots screen owns the plot list, map and sheet; step 3 and step 4 open it wi
 
 **Decisions (per plot):** `teren.verdict` = `da`, `nu` or `de_verificat`.
 
-- `nu` marks the plot `respins` with the reason; the operator continues with another shortlisted plot or goes back to step 3.
+- `nu` marks the plot `respins` with the reason and removes it from the shortlist (a new version of `teren.lista_scurta`); the operator continues with another shortlisted plot or goes back to step 3.
 - `de_verificat` keeps the step in progress and creates the tasks needed to resolve the open points.
 - `da` lets the operator choose it: **`teren.ales`** (the plot to buy). The step can complete when `teren.ales` is set and its verdict is `da`.
 
@@ -253,7 +268,7 @@ The Plots screen owns the plot list, map and sheet; step 3 and step 4 open it wi
 
 **Operator tasks:** meet architects, sign the design contract, pay stage invoices, give access to the plot for the survey.
 
-**Decisions:** `proiect.arhitect`, `proiect.procedura` (final: `notificare` or `autorizare`; selects step `7n` or `7a`), `proiect.versiune_aprobata`.
+**Decisions:** `proiect.arhitect`, `proiect.procedura` (final: `notificare` or `autorizare`; selects step `7n` or `7a`, the other becomes `not_applicable`), `proiect.versiune_aprobata`.
 
 ### 4.8 Step 7 — Authorization (Autorizarea)
 
@@ -296,36 +311,38 @@ The Plots screen owns the plot list, map and sheet; step 3 and step 4 open it wi
 
 ### 4.11 Derived values
 
-Derived values are computed by Tekton, never typed by an agent. Each shows its formula and inputs. Some can be overridden by the operator (e.g. footprint, total budget): an override is kept when inputs change, and the screen then shows "computed value would now be X" with a button to drop the override. Price per m² refreshed by a watcher is a derived value too; a refresh that changes a validation result moves the dependent steps to `needs_revalidation`.
+Derived values are computed by Tekton, never typed by an agent. Each shows its formula and inputs. Some can be overridden by the operator (e.g. the total budget): an override is kept when inputs change, and the screen then shows "computed value would now be X" with a button to drop the override. Price per m² is a derived value computed from the listing samples; when new samples change a validation result, the dependent steps move to `needs_revalidation`.
 
 ### 4.12 Agent proposals [v1]
 
-An agent never sets a decision. It **proposes** a value, with rationale and sources. The proposal appears **inline next to the field** in the step: "Agent suggests 42,000 EUR · 3 sources · Accept / Edit / Reject". Accepting or editing records the decision as the operator's; rejecting records the reason, which the agent sees on its next run. The Home screen shows a **needs your attention** list that counts pending proposals, operator tasks and approval requests, each linking to where it is handled.
+An agent never sets a decision. It **proposes** a value, with rationale and sources. The proposal appears **inline next to the field** in the step: "Agent suggests 42,000 EUR · 3 sources · Accept / Edit / Reject". Accepting or editing records the decision as the operator's; rejecting records the reason, which the agent sees on its next run. A proposal based on personal documents stays *local only* when accepted, unless the operator chooses to release it in the same dialog. The Home screen shows a **needs your attention** list that counts pending proposals, operator tasks and approval requests, each linking to where it is handled.
 
 ## 5. Budget (cross-cutting) [v1 for steps 1–4]
 
 - One budget from step 1 to step 9, with the categories of §4.2.
-- For each category: **planned** (step 1), **committed** (signed contracts, accepted quotes), **paid** (receipts), **remaining**.
-- **Currency:** the budget is kept in RON. Amounts may be entered or found in EUR; each is stored with its currency and converted with the BNR rate of a stated date: the payment date for payments, the day of the calculation for plans and validations (the rate of the last banking day on or before that date, with the rate's date shown).
-- Every payment is linked to an operator task and its proof. It is recorded as soon as the operator closes the task with the receipt (*unverified*), and becomes *verified* after the proof check (§7).
+- For each category: **planned** (step 1), **committed** (amounts the operator has agreed to pay: a signed contract or accepted quote; entered by the operator in v1, by agents from contracts later), **paid** (receipts), **remaining**.
+- **Currency:** the budget is kept in RON. Amounts may be entered or found in EUR; each is stored with its currency and converted with the BNR rate of a stated date: the payment date for payments, the day of the evaluation for plans and validations (the rate of the last banking day on or before that date, with the rate's date shown). If no rate is available, the conversion is marked *de verificat*.
+- Every payment is linked to an operator task, a budget category and its proof. It is recorded as soon as the operator closes the task with the receipt (*unverified*), and becomes *verified* after the proof check (§7). If a check finds a mismatch and the operator corrects the proof, the corrected payment replaces the old one.
 - Alerts when a category exceeds its plan, when the reserve drops below 10%, or when the total goes over `buget.total`.
 
 ## 6. Notification eligibility (cross-cutting) [v1]
 
-Law 169/2026 allows building by notification (notificare) instead of a permit when **all** of the conditions hold. The authoritative list, with article references, lives in `public_knowledge/lege/169-2026/notificare.yaml`; this spec and the RFD summarize it:
+Law 169/2026 allows building by notification (notificare) instead of a permit when **all** of the conditions hold. The authoritative list, with article references and the input each condition is checked against, will live in `public_knowledge/lege/169-2026/notificare.yaml`; the table below is a summary, and the file wins:
 
-| Condition | Where it is decided |
+| Condition | Checked against |
 | --- | --- |
-| A single single-family house (casă unifamilială), with its own lot and access | Steps 1, 3–4 |
-| Ground floor only (P), or demisol + parter (D+P); no basement (subsol) | Step 1 |
-| At most 150 m² gross floor area (suprafață desfășurată) | Step 1, watched in step 6 |
-| In the intravilan of a rural locality of a commune (comună), not a town | Steps 2–4 |
-| Outside protected zones | Steps 3–4 |
-| Compliant with the PUG | Steps 3–4, 6 |
+| A single single-family house (casă unifamilială) | `casa.tip` (step 1) |
+| With its own lot and own access | Plot facts (steps 3–4) |
+| Ground floor only (P), or demisol + parter (D+P); no basement (subsol) | `casa.regim_inaltime`, `casa.subsol` (step 1) |
+| At most 150 m² gross floor area (suprafață desfășurată) | `casa.suprafata_desfasurata_mp` (step 1, watched in step 6) |
+| In the intravilan of a rural locality of a commune (comună), not a town | Locality and UAT (step 2), plot intravilan (steps 3–4) |
+| Outside protected zones | Plot facts (steps 3–4) |
+| Compliant with the PUG | Plot facts (steps 3–4, 6) |
 | Design approved by the county chief architect | Step 6–7n |
 
 - The operator may set the target `procedura.tinta = notificare` in step 1. That target then **filters** localities in step 2 and plots in step 3.
-- A live status is shown on every screen: **eligibil / neeligibil / de verificat**, with the failing or unverified conditions listed.
+- A live status is shown in the app header: **eligibil / neeligibil / de verificat**, for the house in general until a plot is chosen, and for the chosen plot afterwards. Plot and locality screens show their own status. The failing or unverified conditions are listed.
+- If the rules file is missing or invalid, the status is *de verificat* with the reason.
 - Final confirmation happens in step 6, with the architect.
 - **Open legal points**, marked *de verificat* with the source of the interpretation until practice is clear:
   - rural localities inside metropolitan areas (the published exclusion concerns outbuildings of up to 50 m², not explicitly the 150 m² house)
@@ -341,9 +358,9 @@ A dedicated inbox, always visible, with a counter. It is the main place the oper
 - a title, a type, its step and subject (plot, approval, …)
 - why it matters, and whether it is **required** for the step to complete
 - a deadline (derived from the law or a watcher when relevant)
-- everything the agent prepared: who to contact, phone numbers, address and opening hours, questions to ask, documents to bring, exact form fields, amounts
+- everything the agent prepared: who to contact, phone numbers, address and opening hours, questions to ask, documents to bring, exact form fields, amounts, each with the source it came from
 - the required proof
-- a status: `open`, `in_progress`, `done`, `cancelled`; plus the proof check result: `unchecked`, `verified`, `mismatch`
+- a status: `open`, `in_progress`, `completed`, `cancelled`; plus the proof check: `unchecked`, `verified`, `mismatch`
 
 **Task types and required proof.** A task can require several proof items (e.g. ordering the extras CF needs both the receipt and the downloaded document).
 
@@ -355,10 +372,11 @@ A dedicated inbox, always visible, with a counter. It is the main place the oper
 | `deplasare` (visit) | Town hall, plot visit, site | Registration number and a photo of the stamped copy, or the checklist with photos |
 | `semnare` (signing) | Preliminary contract, design contract | The signed document |
 | `intalnire` (meeting) | Architect, bank | Meeting-result form and any documents received |
-| `cont` (account setup) | **Create the project Gmail** and connect it | Successful connection |
+| `cont` (account setup) | **Create the project Gmail** and connect it | The connection succeeds (checked automatically) |
 
-- The **Done** button stays disabled until every required proof item is attached; the form shows what is missing.
-- After closing, an agent **checks the proof** (amount and date on the receipt, registration number format, signatures present). On a mismatch the task reopens with an explanation. A run waiting on the task continues only after the check passes (or right away for tasks without an automated check).
+- **Payment details are checked by the operator.** For `plata` tasks, the payee, IBAN and amount show where the agent found them; details that come from an email or a web page are marked *unverified* until the operator confirms them in the task.
+- The **Done** button explains what is missing until every required proof item is attached. Files are uploaded first (with progress), then attached as proof items.
+- After closing, an agent **checks the proof** (amount and date on the receipt, registration number format, signatures present). On a mismatch the task reopens with an explanation. If no local model is available, the operator can confirm the proof themselves, or release it for a cloud check. A run waiting on the task continues after the check passes, the operator confirms it, or the task is cancelled.
 - Tasks are created by agents or watchers, or manually by the operator, who picks a type; the type sets the proof.
 
 ## 8. Approval requests (Cereri de aprobare) [v1]
@@ -368,52 +386,55 @@ Approval requests cover **outbound actions and privacy**, not decisions (decisio
 | Kind | Created when | What the operator sees |
 | --- | --- | --- |
 | `email_send` | An agent drafts an email whose type is set to *send after approval* | Recipient (and where the address came from), subject, body, attachments |
-| `knowledge_change` | An agent proposes a change to `public_knowledge/` | The file diff and its sources |
-| `privacy_consent` | A cloud run needs data marked *local only* | Which document or data, which agent, why |
+| `knowledge_change` | An agent proposes a change to `public_knowledge/` | The file diff and its sources (only verified official sources are accepted) |
+| `privacy_consent` | A cloud run needs data marked *local only*, or no local model is available for local-only work | Which document or data, which agent, why |
 
 - They are created by Tekton when the agent drafts or proposes; the screen is rendered from what will actually happen, and the agent's explanation appears in a separate, labelled block.
 - The operator can approve, reject with a reason, or edit and approve (email text and knowledge content can be edited; consent cannot). An edit is checked again before it is applied.
-- The agent run waits and resumes after the answer, even days later.
+- The agent run waits and resumes after the answer, even days later. A run that waits for more than 30 days is cancelled and the operator is told.
 - **Not gated:** reading public web pages, listing sites and public registers. These are logged with their sources.
 
 ## 9. Project mailbox and email [v1]
 
 - A **dedicated project mailbox**, for example `casa.<familie>@gmail.com`. Creating it is an operator task, together with the Google Cloud OAuth client Tekton needs (the agent prepares step-by-step instructions). It is connected to Tekton through Google OAuth.
-- **Sending** is configured per message type. Each type is either *draft only* (the operator sends it themselves, from Gmail) or *send after approval*.
+- **Sending** is configured per message type. Each type is either `draft_only` (Tekton keeps the draft; the operator can copy it or push it to Gmail's drafts with one click and send it from there) or `send_after_approval`.
   - Types: `intrebare_vanzator` (seller questions), `cerere_informatii_primarie` (requests to the town hall), `cerere_oferta` (quote requests: architect, survey, geotechnical study, builders), `urmarire_aviz` (follow-ups on approvals), `raspuns_fir` (replies in existing threads).
-  - Default: *send after approval*.
+  - Default: `send_after_approval`.
 - **Reading:** agents read incoming mail in the project mailbox. They link each thread to its step and entity (plot, professional, approval), extract facts as proposals, and create tasks.
-- **Privacy:** mail is *local only* by default. The operator can mark a thread or a sender as *cloud allowed* (§12).
-- Email content is **untrusted**. Instructions inside an email are never followed; they are shown to the operator as content. Emails are displayed safely: no scripts, no remote images unless the operator asks.
+- **Privacy:** mail is *local only* by default. The operator can mark a thread, or a sender for all future messages, as *cloud allowed* (§12), after a confirmation that says what changes.
+- Email content is **untrusted**. Instructions inside an email are never followed; they are shown to the operator as content. Emails are displayed safely: no scripts, no remote images unless the operator asks, links open in a new tab.
 - If the Gmail connection expires, a `cont` task to reconnect appears and a notification is shown.
 
 ## 10. Watchers (Supraveghere programată) [v1]
 
-Watchers are scheduled jobs that run while the stack is up. Some start agent runs, others are system checks. Their results arrive as proposals, operator tasks or notifications.
+Watchers are scheduled jobs that run while the stack is up. Some start agent runs, others are system checks. Their results arrive as proposals, operator tasks or notifications. Agent watchers ship **disabled**; the operator enables them during setup, after choosing the listing sites and the monthly cost cap.
 
 | Watcher | Kind | Default interval | Output |
 | --- | --- | --- | --- |
 | New and changed plot listings in the candidate localities | agent | Daily | New candidates with a pre-filled sheet; price changes; removed listings |
-| Price per m² refresh | agent | Weekly | Updated median; revalidation if a locality's validation flips |
+| Listing samples for price per m² | agent | Weekly | New samples; revalidation if a locality's validation flips |
+| Distances and travel times for new localities | system | On change | Distances on the locality |
 | Project mailbox | system (sync) + agent (triage) | Every 15 minutes | Threads linked, facts proposed, tasks created |
 | Legal deadlines (CU validity, 15 working days, permit expiry, final handover) | system | Daily | Reminders and escalating tasks |
 | Stale knowledge (verification date older than 6 months) | agent | Weekly | Reverification runs and proposed updates |
 | Legal changes (amendments to Law 169/2026, new orders) | agent | Weekly | Proposed updates to the national rules |
-| Backup | system | Daily | Backup status on the health page |
+| BNR exchange rates | system | Daily | Rates for conversions |
+| Backup | system | Daily | Backup status; a notification on failure or when the last success is older than 48 hours |
 
 - Watchers can be paused, run on demand, or have their interval changed from the UI.
 - Runs missed while the machine was off run once at startup.
+- A watcher that fails three times in a row notifies the operator.
 - **Listing sites:** per-site limits on request rate and pages per run; a site that blocks Tekton (repeated refusals) is paused for 24 hours and the operator is told.
 
 ## 11. Knowledge base (`public_knowledge/`) [v1]
 
 - A directory in the Tekton repository that is **committed and pushed**, so it is shared with everyone who uses Tekton.
 - It holds public rules only:
-  - **National:** the steps, deadlines, CU types, notification conditions and forms from Law 169/2026 and Order 975/2026; the public holidays per year.
+  - **National:** the steps, deadlines, CU types, notification conditions and forms from Law 169/2026 and Order 975/2026; the public holidays per year; the SIRUTA list of localities.
   - **Local:** PUG/RLU rules per zone, local council decisions (HCL), local taxes and the infrastructure levy, and town hall procedures (portal, opening hours, fees).
-- Every file has a **source** and a **verification date**. It never contains personal data.
-- **Agents read it first**, before doing new research, and treat it as information to check, not as instructions. When they learn something new or find a rule out of date, they **propose a change**.
-- **The flow:** an agent proposes → the operator reviews the diff in the app and approves → Tekton commits it on a `knowledge/*` branch without touching the operator's working copy → the operator pushes and opens the PR. From approval on, Tekton already uses the approved content, even before it is merged.
+- Every file has a **source** and a **verification date**; a rule inside a file can carry its own when it differs. It never contains personal data.
+- **Agents read it first**, before doing new research, and treat it as information to check, not as instructions. When they learn something new or find a rule out of date, they **propose a change**, backed by a source they actually fetched from an official site.
+- **The flow:** an agent proposes → the operator reviews the diff in the app and approves → Tekton commits it on a `knowledge/*` branch in the operator's repository, without touching the working copy → the operator pushes and opens the PR. From approval on, Tekton already uses the approved content, even before it is merged; approved content that never gets merged can be dropped from the Knowledge screen.
 - Uncertain interpretations are stored with the status `de_verificat` and the source of the interpretation.
 
 ## 12. Documents and personal data [v1]
@@ -423,33 +444,41 @@ Watchers are scheduled jobs that run while the stack is up. Some start agent run
   - `public`: listings, laws, regulations, web snapshots
   - `personal_local` (**local only**): the default for anything the operator uploads, and for email and attachments
   - `personal_cloud` (**cloud allowed**): after the operator's consent, per document, email thread or sender
-- **Derived data inherits the class.** Text extracted from a document, agent results computed from `personal_local` data, and anything an agent writes after reading such data are `personal_local` too. Only the operator can lower a class, and each change is recorded.
-- **What the operator types** (brief, budget, financing figures, decisions) is visible to cloud agents, because budget and area research needs it.
-- Agent runs are either **cloud** (cloud models; see public, `personal_cloud` and operator-typed data) or **local-only** (local models through the model gateway; see everything). If no local model is available, local-only work waits and the UI says so.
+- **Derived data inherits the class.** Text extracted from a document, agent results computed from `personal_local` data, and anything an agent writes after reading such data are `personal_local` too. Only the operator can lower a class, after a confirmation that names what changes; each change is recorded.
+- **What agents see** depends on their tier:
+
+| Tier | Who | Sees |
+| --- | --- | --- |
+| Web | Agents that browse the internet | Public data and the parts of the brief they need (house type, levels, floor area, footprint, land budget, candidate localities). Never income, own funds, loans or personal documents |
+| Cloud | Agents on cloud models without web access | Public data, everything the operator typed (brief, budget, financing), `personal_cloud` data |
+| Local only | Agents on local models, no web access | Everything |
+
+- If no local model is available, local-only work waits and the UI says so, offering to release the data for a cloud run instead (a `privacy_consent` request).
 - Documents can be previewed and downloaded. Every agent claim that comes from a document links back to the page.
 
 ## 13. Interface [v1]
 
-- **Language:** English first, with every text in translation catalogues from day one so Romanian can be added. Romanian legal terms (CF, CU, PAC, avize) are kept, with explanations.
+- **Language:** English first, with every text in translation catalogues from day one so Romanian can be added (including Romanian plural forms and number formats). Romanian legal terms (CF, CU, PAC, avize) are kept, with explanations.
 - **Main screens**
   - **Home:** the 9-step map with states; the current step (the first one not done); notification eligibility; the budget summary; the next deadlines; the **needs your attention** list (§4.12).
-  - **Step:** decisions with proposals inline, derived values and checks, agent findings with sources, runs in progress, tasks and approvals for the step, history.
+  - **Step:** decisions with proposals inline, derived values and checks, agent findings with sources, runs in progress, tasks and approvals for the step, history; step-specific panels (room list, budget allocation, localities, plot verdicts).
   - **Operator tasks:** the inbox (§7).
   - **Approvals:** the queue (§8).
-  - **Plots:** a list and a map with filters, and the plot sheet (fișa de teren). The map works offline from a local map extract; every map action also exists in the list.
+  - **Plots:** a list and a map with filters, and the plot sheet (fișa de teren), where per-plot decisions such as the verdict are made. The map works offline from a local map extract; every map action also exists in the list.
   - **Localities:** candidate localities with their validation.
   - **Budget:** categories with planned, committed, paid and remaining.
   - **Calendar:** legal deadlines and milestones; `.ics` download.
   - **Documents:** a browser with privacy classes.
   - **Mail:** threads, linked to steps and entities.
-  - **Agents:** runs (live progress, cost, results, logs) and watchers (schedules, last result).
-  - **Knowledge:** browse the rules; pending changes with diffs.
+  - **Agents:** runs (live progress, cost, results, logs, why a run is waiting) and watchers (schedules, last result, failures).
+  - **Knowledge:** browse the rules; pending changes with diffs; approved changes not yet merged.
   - **History:** every event, filterable.
-  - **Notifications:** the in-app inbox with counters.
-  - **Health:** services, model gateway, mailbox connection, watchers, backups, cost this month.
-  - **Settings:** mailbox connection, email rules per type, per-agent model profile overrides, watcher schedules, cost caps.
+  - **Notifications:** the in-app inbox.
+  - **Health:** services, model gateway, mailbox connection, watchers, backups, disk space, cost this month.
+  - **Settings:** mailbox connection, email rules per type, per-agent model profile overrides, watcher schedules, listing sites, cost caps, backup location.
+- **Badges** in the navigation: operator tasks (open), approvals (pending), notifications (unread); Home shows the combined *needs your attention* count.
 - Every screen has clear loading, empty (with the next action) and error (with retry) states, and a visible "disconnected" indicator when live updates stop.
-- **Accessibility:** keyboard navigation, visible focus, screen-reader labels, and no information carried by colour alone.
+- **Accessibility:** keyboard navigation, visible focus that never gets lost when an item disappears, screen-reader labels and announcements for the operator's own actions, and no information carried by colour alone. A button that cannot be used yet stays focusable and explains why.
 
 ## 14. Release scope
 
@@ -457,7 +486,7 @@ Tekton is built in workflow order: each step is complete before the next one sta
 
 | Release | Contents |
 | --- | --- |
-| **v1** | The workflow engine, decisions, proposals, derived values, history and revalidation; operator tasks with proof; approvals; agent runs and watchers; project mailbox; knowledge base; documents and privacy classes; budget; calendar; notification eligibility; notifications; health; backup and restore; **steps 1–4 in full** (everything up to the plot verdict, before any deposit) |
+| **v1** | The workflow engine, decisions, proposals, derived values, history and revalidation; operator tasks with proof; approvals; agent runs and watchers; project mailbox; knowledge base; documents and privacy tiers; budget; calendar; notification eligibility; notifications; health; backup and restore; **steps 1–4 in full** (everything up to the plot verdict, before any deposit) |
 | v2 | Steps 5–6: purchase and design, including vetting architects |
 | v3 | Step 7: permit and notification variants |
 | v4 | Steps 8–9: quotes, builder vetting, site tracking, handover |
@@ -465,10 +494,11 @@ Tekton is built in workflow order: each step is complete before the next one sta
 
 ## 15. Non-functional requirements
 
-- **Local only:** the app runs on a Linux workstation (Ubuntu or Rocky) in containers, reachable only from that machine.
-- **Durability over 5 years:** data survives app upgrades; every upgrade takes a backup first, and a failed upgrade can be undone by restoring it. Daily local backups, encrypted, with a tested restore [v1]. Cloud backup comes later.
+- **Local only:** the app runs on a Linux workstation (Ubuntu or Rocky) in containers, reachable only from that machine, at one address (`http://127.0.0.1:8080`).
+- **Durability over 5 years:** data survives app upgrades; every upgrade takes a backup first, and a failed upgrade can be undone by restoring it. Daily local backups, encrypted, with a tested restore of any retained backup [v1]. Cloud backup comes later.
 - **Auditability:** every decision, proposal, task, approval, agent run, email and knowledge change is an event with its author and sources.
 - **Honesty of claims:** unsourced claims never reach the interface (principle 4).
+- **Cost control:** a monthly cost cap for cloud models; agent watchers pause when it is reached.
 - **Legal positioning:** the UI presents information and organization with sources, not legal advice. The wording is to be validated by a lawyer.
 
 ## 16. Open questions
