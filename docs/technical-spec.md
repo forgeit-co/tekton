@@ -125,8 +125,8 @@ tekton/
   docs/
   justfile                         init, up, down, open, logs, backup, restore, upgrade, rollback,
                                    rotate-secrets, map-fetch, api-types, eval, release-fixture,
-                                   test, lint
-  .gitignore                       data/, s3/, backups/, deploy/.env
+                                   knowledge-check, test, lint
+  .gitignore                       data/, s3/, backups/, state/, deploy/secrets/* (with !.gitkeep)
 ```
 
 The layout is layer-first; within each layer, one package per module (§5.1). Modules without domain rules (`auth`, `backup`, `health`, `scheduling`, `settings`, `eventlog`) have no `domain/` package. v1 runs from a clone of the repository (the knowledge flow needs it); packaged installs are out of scope.
@@ -138,7 +138,7 @@ The layout is layer-first; within each layer, one package per module (§5.1). Mo
 | Service | Image | Networks | Notes |
 | --- | --- | --- | --- |
 | `frontend` | `images/frontend` | `edge` | Published on `127.0.0.1:8080`. `server_name 127.0.0.1` plus a `default_server` returning 444; `localhost` redirects to `127.0.0.1`. Proxies `/api/` to `backend-api:8000` with `proxy_set_header Host $http_host`; `client_max_body_size 51m` on `/api/v1/documents`, 1 MB elsewhere; `error_page` 413/502/504 return problem+json; SSE locations use `proxy_buffering off`, `proxy_read_timeout 1h`; other paths fall back to `index.html`. Sets the app CSP (§16) |
-| `migrate` | `images/backend` | `data` | One-shot (`restart: "no"`): waits for `s3`; checks free disk space (twice the database size); takes a `pre-migrate` snapshot unless `data/upgrade-state.json` already names one, the database is empty, or `current = head` (then `migrate.noop`); refuses to migrate without a snapshot; runs the migrations; provisions buckets and S3 policies; recreates agent views |
+| `migrate` | `images/backend` | `data` | One-shot (`restart: "no"`): waits for `s3`; checks free disk space (twice the database size); takes a `pre-migrate` snapshot unless `state/upgrade-state.json` has `phase: "snapshotted"` with `to_release` equal to the release being started and a snapshot whose Alembic revision equals `current` and which `restic snapshots <id>` still lists, the database is empty, or `current = head` (then `migrate.noop`); refuses to migrate without a snapshot; runs the migrations; provisions buckets and S3 policies; then drops and recreates the agent views in the same transaction as the migrations (and on `migrate.noop` too, idempotently, when the stored `agent_views_version` differs), followed by `foreign_key_check` |
 | `backend-api` | `images/backend` | `edge`, `data` | Operator API and SSE on `:8000` |
 | `backend-control` | `images/backend` | `control`, `data` | Internal API on `:8002` (§4.3) |
 | `backend-mcp` | `images/backend` | `data`, `control`, per-session run networks | MCP tools and session files on `:8001` |
@@ -150,11 +150,11 @@ The layout is layer-first; within each layer, one package per module (§5.1). Mo
 | `s3` | MinIO, pinned by digest (provisional, §21) | `data` | Buckets and per-service policies in §10 |
 
 - **Networks:** `control`, `extract` and `data` are `internal: true`; `internet` and `gateway` route outward (the gateway is a host address through `host-gateway`, or a compose service). For each session the launcher creates an internal network `run-<session>`, connects the run container, `backend-mcp`, `llm-proxy` and (web sessions only) `egress-proxy` to it, and removes it when the session ends; run containers therefore cannot reach each other. The resolver on run networks answers service names only; an external lookup fails.
-- **Mounts:** `data/` (SQLite; `backend-api`, `backend-control`, `backend-mcp`, `backend-worker`, `migrate`), the backup target (`backend-worker`, `migrate`), `data/llm-proxy/` (`llm-proxy` usage spool), `public_knowledge/` read-only (`backend-api`, `backend-mcp`, `backend-worker`), and `/repo/.git` read-write in `backend-worker` only, with `/repo/.git/hooks` and `/repo/.git/config` mounted read-only over it. On Rocky/SELinux, shared mounts use `:z`. `backend-worker` runs with the operator's UID (`userns_mode: keep-id` on Podman), so git objects stay owned by the operator.
-- **Secrets** are file-based compose `secrets:` scoped per service (§16.1); there is no shared `env_file`.
+- **Mounts:** `data/db/` (SQLite; `backend-api`, `backend-control`, `backend-mcp`, `backend-worker`, `migrate`), `data/secrets/` (encrypted secrets; `backend-api`, `backend-worker`), `data/operator/` read-only (`backend-api` only), `state/` (upgrade state, run image lock, the `knowledge-check` baseline) is written only by host-side `just` recipes and mounted read-only into `migrate` alone; an e2e test lists each container's mounts. Every service that mounts `data/db/` runs with the same UID/GID (the operator's, via `keep-id` on Podman) and umask `0007`, so all processes can write the WAL files; the backup target (`backend-worker`, `migrate`), `data/llm-proxy/` (`llm-proxy` usage spool), `public_knowledge/` read-only (`backend-api`, `backend-mcp`, `backend-worker`), and `/repo/.git` read-write in `backend-worker` only, with `/repo/.git/hooks` and `/repo/.git/config` mounted read-only over it. On Rocky/SELinux, shared mounts use `:z`. `backend-worker` runs with the operator's UID (`userns_mode: keep-id` on Podman), so git objects stay owned by the operator.
+- **Secrets** are file-based compose `secrets:` scoped per service (§16.1); there is no shared `env_file`. `just init` writes every file secret into `deploy/secrets/` (`0600`), which is git-ignored except for its `.gitkeep`; a CI check fails when any file under `deploy/secrets/` other than `.gitkeep`, or any `*.key`, is tracked.
 - **Startup order:** `s3` (healthy) → `migrate` (completed) → `backend-api`, `backend-control`, `backend-mcp`, `backend-worker`, `llm-proxy`, `launcher`, `extractor`, `egress-proxy` → `frontend`. Backend services refuse to start when `alembic current ≠ head` (`startup.schema_mismatch`). Every long-running service has a healthcheck; `restart: unless-stopped`.
 - **Logs:** services log JSON to stdout; the engine's `json-file` driver keeps 5 × 20 MB per service; `just logs [service]` reads them. Run containers use `--log-driver=none` (§4.2).
-- **Images:** published images are tagged with the Tekton release and pinned by digest. `images/run` is built locally at `just init`/`just upgrade` from a pinned base digest, with the Claude Code CLI installed from `package-lock.json` (integrity hashes); the resulting digest is recorded in `data/run-image.lock`.
+- **Images:** published images are tagged with the Tekton release and pinned by digest. `images/run` is built locally at `just init`/`just upgrade` from a pinned base digest, with the Claude Code CLI installed from `package-lock.json` (integrity hashes); the resulting digest is recorded in `state/run-image.lock`.
 - **Engines:** rootless Podman (reference) or rootless Docker. A rootful engine works but weakens the boundaries in §16; the health page shows it.
 
 ### 4.2 Container hardening
@@ -215,9 +215,14 @@ When `backend-control` is unreachable, `llm-proxy` answers `503 gateway.unavaila
 
 | Module | May import |
 | --- | --- |
-| `privacy`, `knowledge`, `sources`, `documents`, `fx` | — |
+| `privacy`, `knowledge`, `sources`, `documents`, `fx`, `notifications`, `scheduling`, `eventlog`, `settings`, `auth`, `backup`, `health` | — |
 | `decisions` | `privacy` |
 | `proposals` | `decisions`, `privacy` |
+| `approvals` | `privacy` |
+| `sessions` | `privacy` |
+| `runs` | `sessions`, `privacy` |
+| `metering` | `sessions` |
+| `mail` | `privacy` |
 | `localities` | `decisions`, `knowledge`, `fx`, `privacy` |
 | `plots` | `decisions`, `localities`, `privacy` |
 | `eligibility` | `decisions`, `plots`, `localities`, `knowledge` |
@@ -225,7 +230,9 @@ When `backend-control` is unreachable, `llm-proxy` answers `503 gateway.unavaila
 | `tasks` | `budget`, `privacy` |
 | `deadlines` | `knowledge` |
 | `projections` | `decisions`, `privacy` (other modules register into it) |
-| `workflow` | `projections`, `decisions` |
+| `workflow` | `decisions` |
+
+Every `domain/<module>` must have a row (`—` means kernel only); a test fails otherwise. The spec protocols and node types (`DecisionSpec`, `DerivedSpec`, `Check`, `CheckResult`, the graph node kinds) live in `kernel/specs.py`, so every module can build its own specs without importing `projections`. **Step state has one owner:** only `workflow` changes step state. `projections` reports impacts through the `StepRevalidator` port that `workflow` defines and implements; can-complete asks the `CompletionBlockerSource` port, also defined in `workflow` and implemented in `application/` by `proposals` (`proposal_pending`) and `tasks` (`task_unresolved`), next to the checks. `workflow` therefore imports neither `projections`, `proposals` nor `tasks`. The application layer follows the same DAG per module, plus `application/commit` (§5.6), which may import every application module.
 
 - **Registration:** each module registers its decision specs, derived specs, checks, input loaders and step contributions into `projections` and `workflow` through ports, from `composition/core.py`. Across modules, entities are referenced by id only.
 - **Composition:** `composition/core.py` builds shared pieces; `composition/api.py`, `control.py`, `mcp.py`, `worker.py` and `migrate.py` add only what their entrypoint needs. A test asserts that `mcp` wires no Gmail, git or backup adapter.
@@ -278,6 +285,7 @@ meta(key, value)                          -- includes db_epoch, regenerated by r
 | `distances-queuer` | worker | `locality.added` |
 | `knowledge-committer` | worker | `knowledge.approved` |
 | `mail-outbox` | worker | `approval.approved` (kind `email_send`) |
+| `projections-recompute` | worker | `projections.recompute_requested` |
 | `notifier` | worker | events that create notifications |
 
 - A handler failure that is transient (`db.busy`, storage or network errors) is retried with backoff without counting. Other failures are retried 5 times; then the event goes to `consumer_failures`, the offset advances, `bus.handler_failed` is logged and the operator is notified. The health page lists failures with a **retry** action. Consumer lag above 60 s logs `bus.consumer_lag_high`.
@@ -291,7 +299,7 @@ meta(key, value)                          -- includes db_epoch, regenerated by r
 | Steps | `step.started`, `step.completed`, `step.reopened`, `step.revalidation_required`, `step.revalidated`, `step.not_applicable`, `step.applicable` |
 | Decisions | `decision.set`, `decision.privacy_changed`, `decision.override_set`, `decision.override_cleared` |
 | Proposals | `proposal.created`, `proposal.accepted`, `proposal.rejected`, `proposal.superseded`, `proposal.stale` |
-| Projections | `derived.changed`, `check.changed`, `eligibility.changed` |
+| Projections | `derived.changed`, `check.changed`, `eligibility.changed`, `projections.recompute_requested` (subject `system`, payload `{nodes, subjects}`) |
 | Plots, localities | `plot.added`, `plot.updated`, `plot.listing_linked`, `plot.merge_suggested`, `plot.merged`, `plot.dismissed`, `locality.added`, `locality.updated`, `locality.sample_added` |
 | Operator tasks | `task.created`, `task.started`, `task.proof_attached`, `task.payee_confirmed`, `task.completed`, `task.verified`, `task.proof_mismatch`, `task.cancelled` |
 | Approvals, consent | `approval.requested`, `approval.approved`, `approval.rejected`, `approval.expired`, `consent.granted` |
@@ -334,8 +342,8 @@ Check(
 
 Specs are frozen, slotted dataclasses with tuple fields.
 
-- **Subjects:** `SubjectRef` is a union discriminated on `type`: `{type: "project", id: "project"}`, `{type: "plot" | "locality", id: <ULID>}`. The ULID pattern applies to entity ids only.
-- **Value types** (value objects in `kernel` where shared, in `decisions` otherwise; descriptors are named `AreaType`, `MoneyType`, …): `Integer`, `Boolean`, `Enum`, `Money`, `Area`, `Ratio`, `RoomList`, `CategoryAllocation`, `DistanceCriteria`, `EntityRef`, `EntityRefList`, `Verdict`. The authoritative v1 keys are the tables in FS §4; a snapshot test fails on any rename; a rename is a data migration with an alias and its own test.
+- **Subjects:** `SubjectRef` is a union discriminated on `type`: `{type: "project", id: "project"}`, `{type: "plot" | "locality", id: <ULID>}`. The ULID pattern applies to entity ids only. Localities have a ULID `id` and a separate `siruta UNIQUE` column; SIRUTA never appears in a path or a `SubjectRef` (a contract test round-trips a locality `SubjectRef` through `PUT /decisions/zona.localitati`).
+- **Value types** (value objects in `kernel` where shared, in `decisions` otherwise; descriptors are named `AreaType`, `MoneyType`, …): `Integer`, `Boolean`, `Enum`, `Money`, `Area`, `Ratio`, `RoomList`, `CategoryAllocation`, `DistanceCriteria`, `EntityRef`, `EntityRefList`, `Verdict`, `FundingSourceList`. The authoritative v1 keys are the tables in FS §4; a snapshot test fails on any rename; a rename is a data migration with an alias and its own test.
 - **Decisions:** `decisions(key, subject_type, subject_id, version, value, value_version, rationale, source_ids, author_kind, author_id, causation_id, set_at, privacy)`, `UNIQUE(key, subject_type, subject_id, version)`; the current value is the highest version, written in one write UoW with the expected version.
 - **Proposals:** `proposals(id, key, subject_type, subject_id, base_version, value, value_version, rationale, source_ids, run_id, status, privacy)`. `source_ids` must be non-empty. A new proposal for the same key and subject supersedes the pending one. If the decision's version moved past `base_version`, the proposal becomes `stale` and is shown as such (for list values the operator sees both). Only operator requests produce `decision.set`.
 - **Privacy of accepted values:** `max(operator, proposal.privacy)`; the accept dialog can lower it (`decision.privacy_changed`).
@@ -346,7 +354,7 @@ Specs are frozen, slotted dataclasses with tuple fields.
 ### 5.6 Dependency graph and revalidation
 
 - Node types: `DecisionKey`, `DerivedKey`, `CheckKey`, `EntityField`, `KnowledgeFile(glob)`, `FxRate(currency)`, `EligibilityKey`, `StepId`. Edges come from `depends_on`; each step lists what it owns. The reverse index is built at startup and validated (no unknown nodes, no cycles).
-- **Revalidation is synchronous.** `UoW.commit()` maps the recorded domain events to changed nodes (a registry-driven mapping, with a test that every node-changing event type is mapped) and calls `RevalidationService` before committing, so `needs_revalidation` is committed together with the change, whichever entrypoint made it. `POST /steps/{id}/complete` re-evaluates can-complete inside its own `BEGIN IMMEDIATE`.
+- **Revalidation is synchronous, in the application layer.** Every write use case ends in `application/commit/CommitPipeline.commit(uow)`, never in a bare `uow.commit()` (an import-linter rule forbids calling `commit()` outside the pipeline). The pipeline drains the recorded domain events, maps them to changed nodes (a registry-driven mapping, with a test that every node-changing event type is mapped, including `*.privacy_changed`), runs `RevalidationService.apply`, then drains the events that revalidation itself recorded (`derived.changed`, `check.changed`) and repeats until no new node changes: a fixpoint over the acyclic graph, walked in topological order, capped at the graph depth + 1 rounds (exceeding it raises `projections.no_convergence` and rolls back). It then asks `workflow`'s `StepRevalidator` to apply the step effects once, and only then calls `uow.commit()`, so `needs_revalidation` is committed together with the change, whichever entrypoint made it. The UoW itself only runs `BEGIN IMMEDIATE`, the event append and `COMMIT`; `FakeUnitOfWork` needs no revalidation logic. `RevalidationService.plan_impact` is the same walk without writing, used by previews and reopen-impact. A unit test covers a three-hop cascade (decision → derived → check → step). `POST /steps/{id}/complete` re-evaluates can-complete inside its own `BEGIN IMMEDIATE`.
 - **Fan-out:** a change is evaluated for these subjects only:
 
 | Changed node scope | Evaluated subjects |
@@ -358,7 +366,7 @@ Specs are frozen, slotted dataclasses with tuple fields.
 
 - A check change moves a `done` step to `needs_revalidation` only if one of the step's completion requirements selects that subject (e.g. step 3 is not affected by a new candidate; step 2 only by localities in `zona.localitati`).
 - **External triggers:** the BNR job calls revalidation for `FxRate` when the rate moved more than 2% from the rate frozen in an affected check; a knowledge watcher (file mtimes, every minute) and `knowledge.*` handlers call it for `KnowledgeFile`; `task.proof_mismatch` re-evaluates can-complete for the task's step.
-- **Bounds:** synchronous revalidation touches only the fanned-out subjects; if a change would evaluate more than 200 subject checks, the UoW records `projections.recompute_requested` for those and the worker completes them in batches. `projections.recompute` (a worker startup job, keyed by release and knowledge tree hash, and on request) processes one subject per short UoW, writes only on change, and is safe to rerun; with an unchanged tree it produces no `check.changed` events.
+- **Bounds:** synchronous revalidation touches only the fanned-out subjects; if a change would evaluate more than 200 subject checks, the pipeline commits, in the same transaction as the change, a `projections_pending(node, subject_type, subject_id, requested_at)` row per remaining subject and the event `projections.recompute_requested`; the `projections-recompute` consumer completes them in batches and deletes the rows. While any row is pending for a subject selected by a step's completion requirements, can-complete returns the blocker `revalidation_pending`; the startup recompute inserts the same rows first, so the post-upgrade window blocks with `recompute_pending`. `projections.recompute_backlog` is logged with the count. `projections.recompute` (a worker startup job, keyed by release and knowledge tree hash, and on request) processes one subject per short UoW, writes only on change, and is safe to rerun; with an unchanged tree it produces no `check.changed` events.
 - **Impact** is a list of `{code, params}` items; the frontend owns the wording. `GET /steps/{id}/reopen-impact` and `POST /decisions/{key}/preview` return it without writing.
 
 ### 5.7 Steps
@@ -376,7 +384,7 @@ Specs are frozen, slotted dataclasses with tuple fields.
 ### 5.9 Budget, estimates and currency
 
 - `Money(amount, currency: RON | EUR)`; `UnitPrice(amount, currency, per: m2)`; `Cost(amount, currency: USD)` for model usage.
-- **Deterministic estimates:** Tekton computes, as derived values, the planned amount per category from the brief and researched unit costs (`cost facts`: public, sourced, stored by `cost-researcher`), and `finantare.credit_estimat` from the declared income and researched lending rules (maximum debt-to-income ratio, rate, term, down payment; public, sourced, stored by `lending-researcher`). Agents propose `buget.categorii` and `finantare.credit_max` from these derived values; no agent reads the operator's income.
+- **Deterministic estimates:** Tekton computes, as derived values, the planned amount per category from the brief and researched unit costs (`cost facts`: public, sourced, stored by `cost-researcher`), and, in the backend with no model involved, `finantare.credit_estimat` (from the declared income and the researched lending rules: maximum debt-to-income ratio, rate, term, down payment; public, sourced, stored by `lending-researcher`), `buget.total` and `finantare.flux` (a month-by-month cash-flow series from `finantare.surse` against the categories' planned spending order). These are `personal_local` (§6.1). Agents propose `buget.categorii` from the cost estimates and `buget.teren_max`; no agent reads any `finantare.*` value.
 - **FX** (`fx` module): `ExchangeRates` port with a BNR adapter (timeouts 10 s, 3 retries); daily rates in `fx_rates(on, currency, rate)` with 4 decimals. A conversion uses the last rate on or before its date and returns `ConvertedMoney {original, ron, rate, rate_on}`. A missing rate gives `de_verificat` (`fx.rate_missing`); a rate older than 3 banking days logs `fx.rate_stale`.
 - `commitments(id, category, amount, currency, source, created_at, version)` — operator-entered in v1, editable and withdrawable.
 - `payments(id, task_id, category, amount, currency, ron_amount, rate_on, paid_on, receipt_document_id, receipt_sha256, status: unverified|verified|disputed|superseded)`, with a partial unique index on `(task_id, receipt_sha256) WHERE status <> 'superseded'`. Completing a task whose payment is `disputed` first marks it `superseded`, then records the new one. "Paid" sums `unverified` and `verified` only.
@@ -390,7 +398,7 @@ Specs are frozen, slotted dataclasses with tuple fields.
 | `derived_values`, `check_results`, `eligibility_results` | key + subject | yes | — |
 | `steps` | step_id | — | yes |
 | `plots`, `plot_facts`, `plot_listings`, `plot_aliases` | ULID / plot + field / site + listing id / alias | facts, listings | plots |
-| `localities`, `locality_facts`, `listing_samples`, `cost_facts`, `lending_rules` | SIRUTA / … | yes | localities |
+| `localities`, `locality_facts`, `listing_samples`, `cost_facts`, `lending_rules` | ULID (`localities.siruta` UNIQUE) / … | yes | localities |
 | `commitments`, `payments`, `fx_rates` | ULID / ULID / on + currency | — | commitments |
 | `tasks`, `approvals`, `consent_grants` | ULID | yes | tasks, approvals |
 | `documents`, `document_links`, `document_text`, `extraction_jobs`, `sources` | ULID / … | documents, text, sources | — |
@@ -418,6 +426,8 @@ Tables outside the agent views are never exposed to MCP; a schema test checks th
 
 Content (documents, threads, senders) uses `ContentPrivacyClass` (`public`, `personal_cloud`, `personal_local`); `operator` applies only to what the operator types.
 
+**Per-key minimum class.** Every decision key and derived value in the catalogue (`domain/<module>/keys.py`) may declare `min_class`. A row's stored class is `max(computed class, min_class)` whatever its source, including operator input, and no lowering action (§6.3) or "Always" consent (§6.4) may take it below `min_class` (`422 privacy.below_minimum`). Every `finantare.*` key and derived value (`finantare.surse`, `finantare.venit_net_lunar`, `finantare.credit_estimat`, `finantare.flux`) and `buget.total` have `min_class = personal_local`, so they appear only in `local_*` views. Anything derived from them inherits `personal_local` by the normal propagation rule. The derived budget band `buget.banda` (the total rounded to a 50k EUR band) has no `min_class` but is stored `personal_local` by propagation; the operator can release it for one run or always through a `privacy_consent` approval, which is the only way a cloud agent learns anything about the money available. A schema test fails when a `finantare.*` key has no `min_class`.
+
 ### 6.2 Tiers
 
 Each run has a tier from its definition (optionally overridden per agent in Settings, or for one run by a consent grant, §6.4):
@@ -435,7 +445,7 @@ Each run has a tier from its definition (optionally overridden per agent in Sett
 - **Rule:** every column written by, or derived from, an MCP session carries `privacy` (§5.10).
 - **Session watermark:** `session_privacy(session_id, max_class)`, managed by `SessionPrivacyGuard` in `application/privacy/`:
   - initialized when the session spec is built to `max(runs.privacy, class of every input rendered into the prompt, including the continuation and resume outcomes)`;
-  - raised on every read to the max class of the returned rows (`sql_query` results include each row's `privacy`; an aggregate over a view family counts as that family's maximum: `web_*` → `public`, `cloud_*` → `personal_cloud`, `local_*` → `personal_local`);
+  - raised on every read: for write-free tools to the max class of the returned rows; for `sql_query` always to the maximum of every view the authorizer reports as touched (`web_*` → `public`, `cloud_*` → `personal_cloud`, `granted_*` → `personal_local`, `local_*` → `personal_local`), never from values in the result set, so an aliased literal such as `'public' AS privacy` cannot lower it;
   - **exception:** in tier `web`, reading allowlisted `operator` rows raises the watermark to `public` only — the allowlist is the operator's declassification of those keys for web research, documented in FS §12;
   - the raise is committed in its own short `BEGIN IMMEDIATE` UoW **before** the data is returned; it survives restarts;
   - on `suspend`, `runs.privacy` is raised to the session watermark.
@@ -448,14 +458,14 @@ Each run has a tier from its definition (optionally overridden per agent in Sett
 
 A `privacy_consent` approval offers two choices:
 
-- **This run only** (default): a `consent_grants(run_id, items, granted_at)` row; the run's tier becomes `cloud` for its next session (`tier_override`), and the granted items are readable by that run only. The waiting run is re-queued (`consent.granted`).
+- **This run only** (default): `consent_grants(id, run_id, granted_at)` with one `consent_grant_items(grant_id, run_id, item_type, item_id)` row per item; the run's tier becomes `cloud` for its next session (`tier_override`), and the granted items are readable by that run only, through the `granted_*` views (§6.5). Reading them raises the watermark to `personal_local`, so everything the run writes afterwards stays `personal_local`. The waiting run is re-queued (`consent.granted`).
 - **Always**: the items' class is lowered to `personal_cloud` for every future cloud run.
 
 ### 6.5 Agent views and `sql_query`
 
 - `sql_query(sql, params?)` runs on a separate connection opened with `mode=ro`, `PRAGMA query_only`, a row limit (1,000) and a time limit (progress handler, 5 s).
-- Views are generated from `migrations/agent_views.py`: `web_*` (public rows; allowlisted decision keys and derived values whose row class is `public` or `operator`), `cloud_*` (`public`, `operator`, `personal_cloud`, plus rows granted to the run) and `local_*` (all rows). Each view includes the `privacy` column. `settings`, secrets and tables outside §5.10's view list are in no view.
-- An SQLite authorizer allows `SELECT` only on the views of the session's tier, deciding on the innermost view name and refusing direct base-table reads; `ATTACH`, `PRAGMA`, writes and non-allowlisted functions are denied; extension loading is disabled. The authorizer reports the view families it touched to the guard.
+- Views are generated from `migrations/agent_views.py`: `web_*` (public rows; allowlisted decision keys and derived values whose row class is `public` or `operator`), `cloud_*` (`public`, `operator`, `personal_cloud`), `granted_*` (rows joined on `consent_grant_items.run_id = tekton_run_id()`, available to `cloud` sessions) and `local_*` (all rows). Each view includes the `privacy` column. `settings`, secrets and tables outside §5.10's view list are in no view.
+- An SQLite authorizer allows `SELECT` only on the views of the session's tier, deciding on the innermost view name and refusing direct base-table reads; `ATTACH`, `PRAGMA`, writes and non-allowlisted functions are denied (`tekton_run_id()` is a deterministic function registered on each `sql_query` connection from the verified session token, and is allowlisted); extension loading is disabled. The authorizer reports the view families it touched to the guard.
 - The views are a **versioned contract** (`agent_views` version in the tool description). A snapshot test fails when a view changes without a version bump; a bump requires re-running the agent evals. The tier privacy tests run on databases upgraded from every release fixture.
 
 ## 7. Agent runs [v1]
@@ -468,7 +478,7 @@ A `privacy_consent` approval offers two choices:
 | --- | --- | --- |
 | `cost-researcher` | `web` | Cost facts (construction per m², fees, connection tariffs) |
 | `lending-researcher` | `web` | Lending rules (DTI, rates, terms, down payment) |
-| `budget-proposer` | `cloud` | Proposals for `buget.categorii`, `finantare.credit_max`, `casa.amprenta_mp` from derived estimates (reads no income) |
+| `budget-proposer` | `cloud` | Proposals for `buget.categorii`, `casa.amprenta_mp` from cost estimates and, only when released by consent, `buget.banda` (reads no `finantare.*`) |
 | `listing-scout` | `web` | Plots, listings, listing samples |
 | `rlu-reader` | `web` | Knowledge proposals (zone rules) |
 | `plot-zone-finder` | `web` | Plot facts: zone, protected zones, PUG compliance |
@@ -541,6 +551,7 @@ claude -p --verbose \
 
 - Payload fields that state something reference claims by `claim_id`; the loader rejects a result schema in which such a field is not nullable. `source_ids` may reference any source readable in the session's tier.
 - **Processing order:** validate → drop claims whose sources do not resolve → null every payload field referencing a dropped claim and drop summary sentences referencing it → if anything was dropped, the run is `partial` and the drops are listed on the run page.
+- **Payload vs proposals:** the payload is a report shown on the run page; only write tools (`propose_decision`, `store_*`) create proposals and facts. When a tool call references claims (`propose_decision` with a `Verdict` value takes `reasons: [{claim_id}]`), finalization resolves each surviving claim into a self-contained `VerdictReason` (text and sources copied) before the proposal becomes visible; a verdict proposal whose reasons were all dropped is itself dropped. Proposals created before `submit_result` stay hidden (`status = draft`) until finalization.
 - **Finalization** is an application service invoked by `submit_result`, `suspend` or the exit report, guarded by the run's CAS. A session that exits without a terminal call fails with `no_terminal_call`.
 
 ### 7.6 Waiting and resuming
@@ -670,9 +681,9 @@ nota: …                          # optional, at most 500 characters
 ### 11.3 Effective knowledge and commits
 
 - **Effective knowledge** = `public_knowledge/` as mounted, overlaid with approved changes not yet on disk (`knowledge_overlay(path, approval_id, content, approved_at, branch, privacy)`). An entry is retired when the file on disk equals it or carries a later `verificat`; the operator can drop an entry whose branch is gone.
-- The approval diff is shown against the file at `knowledge.base_ref` (validated with `git check-ref-format`, default `main`), which is also the commit's base; if the mounted file differs from `base_ref`, the approval shows a warning.
+- The approval diff is shown against the file at `knowledge.base_ref` (validated with `git check-ref-format`, default: the release tag checked out by the last `just upgrade`, or `main` on a clone that never upgraded), which is also the commit's base; if the mounted file differs from `base_ref`, the approval shows a warning.
 - On `knowledge.approved`, the `knowledge-committer` builds the commit without touching the working tree or index: temporary `GIT_INDEX_FILE`, `read-tree --end-of-options <base_ref>`, `hash-object -w`, `update-index --cacheinfo 100644,…`, `write-tree`, `commit-tree`, then `update-ref` creating `refs/heads/knowledge/<topic>-<ulid>` (ulid minted at approval; an existing ref is skipped). Git runs with `-c core.hooksPath=/dev/null`; author and committer "Tekton agent (approved by operator) `<tekton-agent@localhost>`". It never pushes.
-- **Residual risk (accepted by the operator):** the worker has write access to the operator's `.git`. Hooks and config are read-only, and Tekton's own git calls disable hooks, but a compromised worker could write any object or ref, including `main`, remote-tracking refs and `refs/replace`, which reviewing `knowledge/*` branches would not reveal. Mitigation: the Knowledge screen shows a warning before the operator pushes, and `just knowledge-check` lists refs changed outside `knowledge/*` since the last check (recorded in `data/`).
+- **Residual risk (accepted by the operator):** the worker has write access to the operator's `.git`. Hooks and config are read-only, and Tekton's own git calls disable hooks, but a compromised worker could write any object or ref, including `main`, remote-tracking refs and `refs/replace`, which reviewing `knowledge/*` branches would not reveal. Mitigation: the Knowledge screen shows a warning before the operator pushes, and `just knowledge-check` lists refs changed outside `knowledge/*` since the last check (baseline in host-only `state/knowledge-check.json`, compared also against `git ls-remote origin`, so a compromised worker cannot edit the baseline).
 - Branch topics are neutral (`zone-rules`, `taxes`, `holidays`, `law`). The Knowledge screen reminds the operator that pushing reveals which UATs they are researching.
 - **CI** runs the schema validation, the size check and the pattern scanner on every PR touching `public_knowledge/` or `evals/`, and CODEOWNERS requires a maintainer review for `public_knowledge/`.
 
@@ -684,7 +695,7 @@ nota: …                          # optional, at most 500 characters
 - **Expiry:** `invalid_grant` marks the mailbox disconnected (`mail.disconnected`), creates a `cont` task to reconnect and a notification.
 - **Outbox:** `outbox(id, draft_id, approval_id, message_id, gmail_draft_id, state: draft|approved|sending|sent|failed, attempts, privacy, version)`. Every message carries a deterministic `Message-ID: <outbox-{id}@tekton.local>`. Sending creates the Gmail draft, stores `gmail_draft_id`, then sends it. **Recovery** of a row in `approved` or `sending` (after a crash, a restore or a rollback) searches the mailbox for `rfc822msgid:<outbox-{id}@tekton.local>`: found in Sent → `sent`; found as a draft → send that draft; not found and a `gmail_draft_id` was stored → `failed(draft_missing)` with a notification, never an automatic resend; not found and no draft id → send. Errors (429, 5xx, timeouts) are retried up to 5 times with backoff, then `failed` with a notification. The restore report lists emails sent since the snapshot.
 - `draft_only` drafts stay in Tekton until the operator clicks "Create in Gmail" (`mail.draft_pushed`).
-- **Rendering:** mail HTML is sanitized with DOMPurify and shown in an `<iframe sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc>` whose document has a CSP meta `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'` — never `allow-scripts` (an ESLint rule forbids `allow-scripts` with `allow-same-origin`). The parent measures the height from `contentDocument.scrollHeight`; links get `target="_blank" rel="noopener"`. Remote images are fetched only on the operator's request, through `GET /api/v1/mail/messages/{id}/remote-image?url=` (the worker fetches it through `egress-proxy`).
+- **Rendering:** mail HTML is sanitized with DOMPurify and shown in an `<iframe sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc>` whose document has a CSP meta `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'` — never `allow-scripts` (an ESLint rule forbids `allow-scripts` with `allow-same-origin`). The parent measures the height from `contentDocument.scrollHeight`; links get `target="_blank" rel="noopener"`. Remote images are fetched only on the operator's request. At sync time the worker records each image URL of the sanitized message in `mail_remote_images(message_id, idx, url, document_id, status)`; the UI shows a "Load images" button that calls `POST /api/v1/mail/messages/{id}/remote-images` (CSRF-protected, `202`). The API only queues a `mail.remote_images_requested` job; the worker fetches each recorded URL (never a URL from the request) through `egress-proxy` with a 10 s timeout and a 5 MB cap, keeps it only if its magic bytes are PNG, JPEG, GIF or WebP, and stores it as a `personal_local` document. The frame's image URLs are rewritten to `documents/{id}/content` (served with `nosniff` and `CSP: sandbox`, §10); readiness arrives as `mail.remote_images_ready` over SSE; failures leave the placeholder with `remote_image.unavailable`.
 
 ## 13. Scheduling and deadlines [v1]
 
@@ -702,8 +713,8 @@ nota: …                          # optional, at most 500 characters
 - REST under `/api/v1`, JSON, OpenAPI generated by FastAPI with stable `operation_id`s. All wire models derive from a `WireModel` base (Pydantic `json_schema_serialization_defaults_required=True`), with separate input and output schemas. FastAPI's automatic `HTTPValidationError` is removed from the OpenAPI.
 - **IDs:** entity ids are ULIDs (26 characters, with a pattern); `SubjectRef` as in §5.5; step ids are `StepId`; Gmail thread ids are opaque strings. **Instants:** UTC ISO-8601 with `Z`, named `*_at`. **Dates:** `YYYY-MM-DD` in Europe/Bucharest, named `*_on`.
 - **Numbers:** `DecimalStr` (a string with a pattern, quantized on output: money 2 decimals, rates 4, ratios 4); `Money = {amount: DecimalStr, currency}`; `ConvertedMoney = {original, ron, rate, rate_on}`; `UnitPrice = {amount, currency, per}`; `Area = {value: DecimalStr, unit: "m2"}`; `Ratio` is a fraction (`"0.12"` = 12%); `Cost = {amount, currency: "USD"}`. The frontend never computes money; live totals come from the preview endpoint.
-- **Composite values:** `RoomList = [{kind, area: Area}]`; `CategoryAllocation = [{category, amount: Money}]`; `DistanceCriteria = [{destination: {kind: city|hospital|school|transport|shops, name?, coordinates?}, max_minutes}]`; `EntityRef = SubjectRef`; `EntityRefList = [EntityRef]`; `Verdict = {value: da|nu|de_verificat, reasons: [ClaimRef], risks: [{claim_id, cost: Money | null}]}`.
-- **Decisions:** `DecisionOut` is a union discriminated on `value_type`; each branch has `value: T | null`, `version`, `subject`, `rationale`, `sources: [SourceRef]`, `privacy`. `DecisionIn = {value: T | null, rationale, source_ids}`, parsed by key on the server. Privacy changes use `PATCH /decisions/{key}/privacy`. `DecisionSpecOut` carries key, scope, step, value type, options, bounds, required, quantifier, `accepts_de_verificat`, proposable. `DerivedOut = {key, subject, computed, override, effective, overridable, formula_code, inputs, computed_at}`. `SourceRef = {id, kind, title, url, retrieved_at, locator, content_verified}`; `GET /sources?ids=` batch-reads.
+- **Composite values:** `RoomList = [{kind, area: Area}]`; `CategoryAllocation = [{category, amount: Money}]`; `DistanceCriteria = [{destination: {kind: city|hospital|school|transport|shops, name?, coordinates?}, max_minutes}]`; `EntityRef = SubjectRef`; `EntityRefList = [EntityRef]`; `Verdict = {value: da|nu|de_verificat, reasons: [VerdictReason], risks: [{text: LocalizedText, cost: Money | null, source_ids}]}` with `VerdictReason = {text: LocalizedText, source_ids: [ULID]}` — self-contained, so it stays readable after the run; operator-authored reasons have `source_ids: []`; `FundingSourceList = [{kind: economii|credit_bancar|imprumut_familie|venituri_viitoare|altele, amount: Money, monthly: bool, start_on, end_on: date | null, available_on, certainty: sigur|probabil|incert, note}]`; `CashFlow = [{month, available: Money, planned: Money, shortfall: bool}]`.
+- **Decisions:** `DecisionOut` is a union discriminated on `value_type`; each branch has `value: T | null`, `version`, `subject`, `rationale`, `sources: [SourceRef]`, `privacy`. `DecisionIn = {value: T | null, rationale, source_ids}`, parsed by key on the server. An unset decision serializes `version: 0`; `If-Match: "0"` creates version 1. `DerivedOut` includes `override_version` (0 when none), used as the `If-Match` of override writes. `CheckOut = {key, subject, step, result: pass|fail|de_verificat, codes: [{code, params}], fx: {rate, rate_on} | null, computed_at, privacy}`. Privacy changes use `PATCH /decisions/{key}/privacy`. `DecisionSpecOut` carries key, scope, step, value type, options, bounds, required, quantifier, `accepts_de_verificat`, proposable. `DerivedOut = {key, subject, computed, override, effective, overridable, formula_code, inputs, computed_at}`. `SourceRef = {id, kind, title, url, retrieved_at, locator, content_verified}`; `GET /sources?ids=` batch-reads.
 - **Enums:** `snake_case`, published as named schemas; i18n keys `decision.<key>.option.<value>`, falling back to `enum.<schema>.<value>`.
 - **Nulls:** response fields are always present, absent values are `null`. `PATCH` accepts only `application/merge-patch+json` (absent = unchanged, `null` = clear; other types `415`).
 - **Strings:** every REST string has a `max_length` (names 200, texts 10,000); bodies are capped at 1 MB except uploads.
@@ -729,7 +740,7 @@ nota: …                          # optional, at most 500 characters
 ### 14.2 Operator session
 
 - The canonical origin is `http://127.0.0.1:8080`; `localhost` redirects to it.
-- `just init` generates `data/secrets/operator.key` (`0600`, a plaintext exception to the encrypted secrets). `just open` mints a single-use login token (256-bit, 10-minute expiry; its hash is stored in `login_tokens` with `used_at`) and prints `http://127.0.0.1:8080/login#<token>`.
+- `just init` generates `data/operator/operator.key` (`0600`, a plaintext exception to the encrypted secrets). `just open` mints a single-use login token (256-bit, 10-minute expiry; its hash is stored in `login_tokens` with `used_at`) and prints `http://127.0.0.1:8080/login#<token>`.
 - `main.ts` reads and clears the fragment before the router starts, then calls `POST /session`, which sets `tekton_session` (`HttpOnly`, `SameSite=Strict`, 30 days, sliding). An invalid token shows "run `just open` again". `GET /session` returns `{authenticated, csrf_token?, release}`; `DELETE /session` logs out.
 - Mutating requests carry `X-CSRF-Token`. Every route except `POST /session`, `GET /session`, `GET /mail/oauth/callback` and `GET /health/live` (`text/plain` `ok`) requires the session; a test enumerates the routes.
 - The operator API accepts only `Host: 127.0.0.1:8080` (and `localhost:8080` for the redirect).
@@ -741,7 +752,8 @@ nota: …                          # optional, at most 500 characters
 | Session | `GET/POST/DELETE /session` |
 | Attention | `GET /attention` — counts and items: pending proposals, open tasks, pending approvals, unread notifications (the single source for badges) |
 | Steps | `GET /steps`, `GET /steps/{step_id}`, `GET /steps/{step_id}/reopen-impact`, `POST /steps/{step_id}/complete`, `POST /steps/{step_id}/reopen`, `POST /steps/{step_id}/revalidate` (confirm after review; `If-Match`) |
-| Decisions | `GET /decision-specs`, `GET /decisions?step=&subject_type=&subject_id=`, `PUT /decisions/{key}?subject_type=&subject_id=` (`DecisionIn`), `PATCH /decisions/{key}/privacy`, `POST /decisions/{key}/preview` (`DecisionIn` → `{derived: [DerivedOut], checks, impacts}`; debounced 300 ms by the client) |
+| Decisions | `GET /decision-specs`, `GET /decisions?step=&subject_type=&subject_id=`, `PUT /decisions/{key}?subject_type=&subject_id=` (`DecisionIn`), `POST /decisions/{key}/preview?subject_type=&subject_id=` (`DecisionIn` → `{derived: [DerivedOut], checks: [CheckOut], impacts}`; debounced 300 ms by the client). `PATCH /decisions/{key}/privacy?subject_type=&subject_id=`. The subject parameters are required for non-`PROJECT` keys (`422 subject.scope_mismatch`) |
+| Checks | `GET /checks?step=&subject_type=&subject_id=` (`[CheckOut]`; the frontend refreshes on `check.changed`) |
 | Proposals | `GET /proposals?status=&step=&subject_type=&subject_id=` (paged), `POST /proposals/{id}/accept` (optional edited value, optional privacy lowering), `POST /proposals/{id}/reject` (reason) |
 | Derived values | `GET /derived?step=&subject_type=&subject_id=`, `PUT/DELETE /derived/{key}/override?subject_type=&subject_id=` |
 | Eligibility | `GET /eligibility?subject_type=&subject_id=` (default: the project, or `teren.ales` once set) |
@@ -754,7 +766,7 @@ nota: …                          # optional, at most 500 characters
 | Sources | `GET /sources?ids=`, `GET /sources/{id}`, `GET /sources/{id}/snapshot` |
 | Runs | `GET /agent-definitions`, `GET /runs` (paged; filters `status`, `definition`, `step`), `POST /runs` (definition, subject, `confirm_over_cap`), `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/log?after_line=`, `GET /runs/{id}/transcript` |
 | Scheduled jobs | `GET /jobs`, `PATCH /jobs/{id}`, `POST /jobs/{id}/run` |
-| Mail | `GET /mail/status`, `POST /mail/oauth/start`, `GET /mail/oauth/callback`, `GET /mail/threads` (paged), `GET /mail/threads/{id}`, `PATCH /mail/threads/{id}/privacy`, `PATCH /mail/senders/privacy`, `POST /mail/drafts/{id}/push`, `GET /mail/messages/{id}/remote-image?url=` |
+| Mail | `GET /mail/status`, `POST /mail/oauth/start`, `GET /mail/oauth/callback`, `GET /mail/threads` (paged), `GET /mail/threads/{id}`, `PATCH /mail/threads/{id}/privacy`, `PATCH /mail/senders/privacy`, `POST /mail/drafts/{id}/push`, `POST /mail/messages/{id}/remote-images` (202) |
 | Knowledge | `GET /knowledge/tree`, `GET /knowledge/file?path=`, `GET /knowledge/changes` (paged; `{approval_id, path, before, after, unified_diff, sources, status: pending|approved|committed|rejected|retired|dropped}`), `DELETE /knowledge/overlay?path=` |
 | Calendar | `GET /calendar?from_on=&to_on=` (inclusive), `GET /calendar.ics` (download; RFC 5545 escaping; no URL or ATTACH from agent data) |
 | History | `GET /events?after_seq=&before_seq=&limit=&type=&subject_type=&subject_id=` (items are the SSE message union) |
@@ -768,7 +780,7 @@ nota: …                          # optional, at most 500 characters
 ### 14.4 Live updates (SSE)
 
 - `GET /api/v1/stream` resumes from the `Last-Event-ID` header, or `?last_event_id=` when the client reconnects manually. Message ids are `<db_epoch>:<seq>`; a different epoch (after a restore or rollback) triggers `resync`.
-- Each event is sent as `id: <epoch>:<seq>`, `event: message`, `data:` an `SseMessage {seq, type, at, subject, subject_version, causation_id, data}` with `data` the upcast latest payload, as a union over the event types plus `unknown`. `resync` is a named event without an id; heartbeats are comment lines every 15 s. The `SseMessage` union is published in OpenAPI through a schema-only operation (`getStreamMessageSchema`).
+- Each event is sent as `id: <epoch>:<seq>`, `event: message`, `data:` an `SseMessage {seq, type, at, subject, subject_version, resource, causation_id, data}`, where `resource` is `{kind, id, version}` for the row that changed (for `decision.*`: kind `decision`, id `<key>:<subject_type>:<subject_id>`, version the decision row's version) or null with `data` the upcast latest payload, as a union over the event types plus `unknown`. `resync` is a named event without an id; heartbeats are comment lines every 15 s. The `SseMessage` union is published in OpenAPI through a schema-only operation (`getStreamMessageSchema`).
 - Replay from the events table; beyond 10,000 missed events the server sends `resync`. GET responses carry `X-Event-Seq` (`<epoch>:<seq>`), which the client uses as its first `last_event_id`.
 - `GET /runs/{id}/stream?after_line=` sends `RunLogLine` items with their `line_no`, and an `end` event when the session ends.
 
@@ -779,7 +791,7 @@ nota: …                          # optional, at most 500 characters
 ## 15. Frontend [v1]
 
 - **Stack:** Vue 3 (Composition API), TypeScript strict, Vite, Vue Router (history mode), TanStack Vue Query, Pinia for client-only state, vue-i18n (`en` from day one; `ro` through the same keys, with `Intl.PluralRules`), Reka UI, MapLibre GL with a local PMTiles extract (style, glyphs and sprites bundled; `just map-fetch` downloads a pinned extract, checks its hash and writes the manifest; ODbL attribution shown), pdf.js (pinned, `isEvalSupported: false`), DOMPurify.
-- **Structure** (`frontend/project_structure.md`, M0a): `src/app` (shell, router, providers, stream wiring, global guards), `src/features/<feature>`, `src/shared/domains/<domain>`, `src/shared/foundation` (`api`, `stream`, `routing` with `subjectRoute`, `ui`, `i18n`, `format`). Rules, enforced by ESLint: `app → features → shared/domains → shared/foundation`; features never import features; domains never import other domains (entity pickers receive options from the feature). A query lives in its feature until a second feature needs it, then moves to `shared/domains`.
+- **Structure** (`frontend/project_structure.md`, M0a): `src/app` (shell, router, providers, stream wiring, global guards), `src/features/<feature>`, `src/shared/domains/<domain>`, `src/shared/foundation` (`api`, `stream`, `routing` with `subjectRoute`, `ui`, `i18n`, `format`). Rules, enforced by ESLint: `app → features → shared/domains → shared/foundation`; features never import features; domains import other domains only along the DAG declared in `frontend/project_structure.md`, from which the ESLint config is generated (v1: `decisions → proposals, sources`; `proposals → sources`; `tasks → documents, budget`; `approvals → sources`; every other domain imports only foundation). Entity pickers receive options from the feature. `sources` presenters (`SourceChip`, `SourceList`) sit low in the DAG so any domain can cite. A query lives in its feature until a second feature needs it, then moves to `shared/domains`.
 - **Shared domains (v1):** `steps` (`StepMap`, `StepStatus`), `decisions` (`useDecisionQuery`, `useDecisionMutation`, `DecisionField.vue` container, `DecisionInput<ValueType>` presenters, `DerivedValueRow`, `DerivedOverrideEditor`), `proposals` (`ProposalInline`, privacy dialog), `eligibility` (`EligibilityStatus`), `plots` (filters parser/serializer for route queries, `PlotCard`), `localities`, `tasks` (`TaskCard`, `ProofPartInput`, `ProofCheckStatus`), `approvals` (`ApprovalCard`), `runs` (`RunStatusBadge`, `RunStatusDetail`, `RunLogView`), `documents` (`PdfViewer`), `sources` (`SourceList`, `SourceViewer`, `SourceChip`), `budget`, `notifications`, `attention`.
 - **Routes:**
 
@@ -809,10 +821,11 @@ nota: …                          # optional, at most 500 characters
 - **One stream per browser:** the tab holding the Web Lock `tekton-stream` owns the `EventSource` and relays messages over `BroadcastChannel`; when it closes, another tab takes the lock and resumes from the last relayed id. Run log streams also go through the leader, at most one at a time.
 - **API client middleware:** CSRF header, `X-Request-Id`, `Idempotency-Key` on creates, `problem+json` → `ApiError`, 401 → `onUnauthorized` (drafts saved to `sessionStorage`, then `/session-expired`, bypassing the draft guard), `X-Tekton-Release` mismatch → a reload banner. Uploads use the same middleware through an XHR transport for progress.
 - **Per-code behaviour:** `conflict.stale_version` → Reload / Keep mine; `proof.missing` and `details.unconfirmed` → highlight the parts; `validation.failed` → field errors from JSON Pointers; `db.busy`, `storage.unavailable`, `gateway.unavailable` → automatic retry with backoff (3 times) then a retry button; `privacy.forbidden` → consent explanation; `cost.confirmation_required` → confirm dialog; others → a toast with the code's message.
-- **Drafts:** `useDraft` (a `structuredClone` of the server value, `baseVersion` advanced from the mutation response, computed `isDirty`, `serverChanged` when a newer `subject_version` arrives, `If-Match`, 409 handling) registers with a Pinia drafts registry (`register`/`unregister`); one global navigation guard asks before leaving dirty drafts.
+- **Decision editing:** each `DecisionField` saves on its own **Save** button (Enter in single-value inputs); nothing auto-saves. The rationale is an optional collapsed text area under the field. Operator writes send `source_ids: []`. A pending proposal shows inline under the field (`ProposalInline`, fetched through the `proposals` query filtered by key and subject). The step's **Done** is `aria-disabled` while the step has dirty drafts, with the hint "N unsaved changes" linking to the first one. Decisions of a `blocked` step stay editable, under a banner naming what blocks it.
+- **Drafts:** `useDraft` (a `structuredClone` of the server value, `baseVersion` advanced from the mutation response, computed `isDirty`, `serverChanged` when a message whose `resource` matches the draft's resource carries a newer `resource.version` (a test: `decision.set` on key A does not flag the draft of key B, and a plot edit does not flag a plot decision draft), `If-Match`, 409 handling) registers with a Pinia drafts registry (`register`/`unregister`); one global navigation guard asks before leaving dirty drafts.
 - **Step screen:** a generic `StepView` plus panels from `features/step/panels/<stepId>/` (room list, budget allocation with live preview, localities with keyboard reordering, plot verdict links). A panel declares `ownsKeys`, and those keys are not rendered as generic fields. Per-plot decisions render in the plot sheet.
 - **Documents:** `PdfViewer` renders pdf.js in a same-origin `/pdf-viewer.html` iframe with `sandbox="allow-scripts"` (no same-origin); the parent fetches the bytes and posts an `ArrayBuffer` after a handshake; the frame posts back `{page, numPages}`.
-- **Safe content:** DOMPurify only in the mail `srcdoc` builder; `SafeLink` accepts only `http(s)` URLs and shows the host; `vue/no-v-html` is an error; agent prose gets its `lang`.
+- **Safe content:** DOMPurify only in the mail `srcdoc` builder; `SafeLink` accepts only `http(s)` URLs, shows the host and refuses URLs on the app's own origin; `vue/no-v-html` is an error; agent prose gets its `lang`.
 - **States:** `AsyncState` per section (loading, error with retry, `#empty` slot); an empty-state table per route (text and next action); a global "disconnected" banner.
 - **Accessibility:** `eslint-plugin-vuejs-accessibility`; axe in Playwright; the step map uses `aria-current`; dialogs trap focus; focus moves to the page heading on navigation and to the next item (or the list heading) when the focused item disappears; blocked buttons use `aria-disabled` with `aria-describedby` pointing to the visible blocking list; ranked lists have Move up/down buttons with announcements; entity pickers are comboboxes; the announcer speaks the operator's own actions and a debounced (10 s) summary of background changes.
 - **Times** are formatted with `timeZone: "Europe/Bucharest"`; legal dates are parsed as dates. Decimal input goes through `parseDecimal(input, locale)`.
@@ -823,7 +836,7 @@ nota: …                          # optional, at most 500 characters
 | --- | --- |
 | Another local process or website drives the app | `127.0.0.1` binding, nginx `server_name` + default 444, Host allowlist, `SameSite=Strict` cookie and CSRF header, single-use login token, app CSP |
 | Hijacked agent (prompt injection from web, mail, knowledge or earlier agent output) | One container and one network per session; per-session token with server-side tool, tier and object scoping; built-in tools disabled; no S3, DB, Gmail or git credentials in runs; outbound actions only through approvals; recipient provenance rules for every tier; personal attachments flagged; payee, IBAN and URLs unverified until the operator confirms; untrusted-content envelopes on all agent-authored and external text |
-| Personal or financial data sent out | Privacy classes and tiers with a persisted watermark (§6); web sessions see only public data and the allowlisted brief; no v1 agent reads income; `local_only` sessions have no web; model and path allowlists in `llm-proxy`; fail-closed self-check |
+| Personal or financial data sent out | Privacy classes and tiers with a persisted watermark (§6); web sessions see only public data and the allowlisted brief; `finantare.*` and `buget.total` have `min_class = personal_local` (§6.1), computed in the backend, never read by a cloud or web agent; `local_only` sessions have no web; model and path allowlists in `llm-proxy`; fail-closed self-check |
 | Exfiltration over the network or DNS | Per-session internal networks; web only through `egress-proxy`; run-network DNS answers service names only |
 | SSRF against internal services | The backend never fetches agent-chosen URLs (content verification and remote mail images go through `egress-proxy`, restricted as stated) |
 | Forged sources reaching the public repository | `content_verified` by re-fetching from official domains; attested sources marked `de_verificat`; operator review of every knowledge change |
@@ -844,7 +857,7 @@ nota: …                          # optional, at most 500 characters
 | Gateway inference key | `llm-proxy` | file secret | Replace in the gateway, restart `llm-proxy` |
 | Internal API credentials (one per caller) | `llm-proxy`, `egress-proxy`, `launcher`, `backend-mcp`, `backend-worker` | file secrets generated by `just init` | `just rotate-secrets` |
 | S3 credentials (one per service, with policies) | `backend-api`, `backend-mcp`, `backend-worker`, `migrate` | file secrets | `just rotate-secrets` |
-| Operator key | `backend-api` | `data/secrets/operator.key` (`0600`, plaintext) | `just rotate-secrets` (logs out) |
+| Operator key | `backend-api` | `data/operator/operator.key` (`0600`, plaintext) | `just rotate-secrets` (logs out) |
 | Session tokens | run container (plaintext, once), `backend-control` (hash) | `session_tokens` | Per session |
 | Backup password (restic) | `backend-worker`, `migrate` | file secret; a copy kept offline | `restic key add/remove`; snapshots record the key id |
 
@@ -854,16 +867,16 @@ The gateway must be on the same host or reached over TLS.
 
 - **Backups use restic**, one repository at the configured target (mounted into `backend-worker` and `migrate`). restic encrypts, authenticates, deduplicates and prunes by snapshot, so any retained snapshot restores completely.
 - **Each snapshot** is taken from a staging directory: the SQLite online backup first, then the S3 objects exported content-addressed (`objects/<sha256>`, hard-linked from a local cache so unchanged objects cost nothing), `data/secrets` (already encrypted) and the non-secret config. Snapshots are tagged with the release, the Alembic revision and the key ids. Excluded: `session-files`, `transcripts`, the secrets key, the restic password.
-- **Retention:** 14 daily, 8 weekly, plus every `pre-migrate` snapshot for 90 days; `restic forget --prune` after each backup. A missing or full target, or a last success older than 48 hours, is a health warning and a notification; it never blocks startup. A target on the same device as `data/` is a health warning.
+- **Retention:** 14 daily, 8 weekly, plus every `pre-migrate` snapshot for 90 days (the snapshot named in a pending `state/upgrade-state.json` is never forgotten); `restic forget --prune` after each backup. A missing or full target, or a last success older than 48 hours, is a health warning and a notification; it never blocks startup. A target on the same device as `data/` is a health warning.
 - **Restore:** `just restore [snapshot]` stops the stack (including run containers); refuses a snapshot from a newer schema than the current code; restores SQLite, then `PUT`s each object with its hash verified, then `data/secrets` (asking for a retired key if the snapshot's key id is not current); writes a new `db_epoch`; runs `migrate` if the snapshot's schema is older; applies the outbox recovery (§12); and starts the stack with a report (emails sent since the snapshot, `knowledge/*` branches created since then). A CI test backs up several times, prunes past the first snapshot, and restores both the newest and the oldest retained snapshot with every hash verified.
 - **Upgrades:** `just upgrade <release>`:
-  1. requires a clean working tree and verifies the tag signature when configured;
-  2. writes `data/upgrade-state.json` `{phase: "started", from_release, from_git_ref, to_release}`;
+  1. requires a clean working tree (`git status --porcelain --untracked-files=no`; ignored paths never count) and verifies the tag signature when configured;
+  2. writes `state/upgrade-state.json` `{phase: "started", from_release, from_git_ref, to_release}`;
   3. drains runs (§7.2), then stops `backend-api`, `backend-control`, `backend-mcp`, `backend-worker`, `llm-proxy`, `launcher` and the run containers;
   4. takes the `pre-migrate` snapshot; on failure, aborts (`upgrade.failed`, reason `snapshot_failed`), restarts the old stack and leaves the tree unchanged; on success, records `{phase: "snapshotted", snapshot}` atomically;
   5. checks out the release tag (code, `compose.yaml`, `public_knowledge/`), pulls the pinned images and rebuilds the run image; on failure, checks out `from_git_ref` and restarts the old stack;
-  6. runs `migrate` (one transaction; a failure leaves the old schema intact, and the command then offers `just rollback`), starts the stack, and writes `{phase: "completed"}` (`upgrade.completed`).
-- **Rollback:** `just rollback` reads `data/upgrade-state.json`, refuses without a recorded snapshot, requires a clean tree, stops the stack, restores exactly that snapshot (with the full restore routine, including outbox recovery), checks out `from_git_ref`, restores the previous `data/run-image.lock` (rebuilding the run image if needed), re-pulls the old pinned images, and starts it. Everything recorded since the upgrade is lost; the command lists it and asks for confirmation.
+  6. runs `migrate` (one transaction; a failure leaves the old schema intact, and the command then offers `just rollback`), starts the stack, writes `{phase: "completed"}` (`upgrade.completed`) and moves the file to `state/upgrade-history/`, so a later migration outside `just upgrade` always takes a fresh snapshot.
+- **Rollback:** `just rollback` reads `state/upgrade-state.json`, refuses without a recorded snapshot, verifies with `restic snapshots <id>` that the snapshot still exists before stopping anything, requires a clean tree, stops the stack, restores exactly that snapshot (with the full restore routine, including outbox recovery), checks out `from_git_ref`, restores the previous `state/run-image.lock` (rebuilding the run image if needed), re-pulls the old pinned images, and starts it. Everything recorded since the upgrade is lost; the command lists it and asks for confirmation.
 - **Release fixtures:** `just release-fixture <tag>` commits a seeded database (with rows in every table and child table) for each tag, starting with M0a; migration tests upgrade every fixture to head, compare row counts per table, and run the data-migration tests.
 
 ## 18. Observability
@@ -885,21 +898,25 @@ The gateway must be on the same host or reached over TLS.
 | M0a | Fan-out evaluates exactly the expected subjects; quantifier-aware step effects | unit |
 | M0a | `CheckResult` tri-state and `accepts_de_verificat`; complete-vs-PUT race | unit, integration |
 | M0a | `projections.recompute` on an unchanged tree emits no `check.changed`; rerun safe | integration |
-| M0a | Stale `If-Match` → 409; missing → 428; mutations return the new `ETag` | api |
+| M0a | Stale `If-Match` → 409; missing → 428; `If-Match: "0"` creates an unset decision and an override; mutations return the new `ETag`; preview and privacy with `subject_type`/`subject_id` per scope | api |
+| M0a | `CommitPipeline` three-hop cascade reaches a fixpoint; non-convergence rolls back; over 200 checks commits `projections_pending` and can-complete returns `revalidation_pending` until the consumer drains it | unit, integration |
+| M0a | Every `domain/<module>` has a DAG row; only `workflow` writes step state | unit |
 | M0a | Every stored `(kind, version)` upcasts to its expected latest value | unit |
 | M0a | Decimal round trip (DB, JSON, OpenAPI types); project-subject uniqueness; `SubjectRef` validation | integration, contract |
 | M0a | Concurrent writes from two processes land with gap-free `seq`; `db.busy` maps to 503 | integration |
 | M0a | Poison event goes to `consumer_failures`, retry works; transient errors do not count; new consumer starts at max `seq` | integration |
 | M0a | Every route except the listed ones requires the session; CSRF; Host rules through `frontend`, including a rebinding `Host`; problem+json for validation, 404, 405, 413 (nginx), 500 | e2e, api |
 | M0a | Backup several times, prune, restore newest and oldest; restore of an older schema migrates; newer refused | integration |
-| M0a | Upgrade: kill during drain, failed snapshot, failed image build, failed migration, then rollback (run image lock restored) | integration |
+| M0a | Upgrade: kill during drain, failed snapshot, failed image build, failed migration, then rollback (run image lock restored); a completed upgrade followed by a `just up` migration takes a fresh snapshot; rollback after the snapshot was pruned refuses before stopping the stack | integration |
 | M0a | Migrations from every release fixture keep row counts; `foreign_key_check` passes; each data migration's own test; rename alias | integration |
 | M0a | Cron across DST changes; missed jobs run once | unit |
 | M0a | SSE replay from `Last-Event-ID`, `resync` beyond the limit and on a new epoch | integration |
 | M0a | Frontend: shell, routes (reactive params), one stream per browser across four tabs, own-write suppression keeps revalidation effects, 401 redirect keeps drafts, release banner | component, e2e |
 | M0b | `web` and `cloud` sessions cannot read data outside their tier through any tool, including `sql_query`; authorizer refuses base tables; an allowlisted key accepted from a `personal_local` proposal is invisible to `web` | integration |
 | M0b | Watermark: raised by `cloud_*` and `local_*` reads and by rendered inputs; web allowlist reads stay `public`; a second web run sees what a first web run wrote; raise committed before data returns (crash test); survives restart | integration |
-| M0b | Accepting a `personal_local` proposal does not expose it; consent for one run only | integration |
+| M0b | Accepting a `personal_local` proposal does not expose it; consent for one run only: a run with no grant sees zero `granted_*` rows, and writes after a granted read are `personal_local`; `'public' AS privacy` in `sql_query` does not lower the watermark | integration |
+| M0b | Verdict proposals carry self-contained reasons; a verdict whose reasons were all dropped is not proposed | integration |
+| M0b | A `cloud` or `web` session cannot read any `finantare.*` row, `buget.total` or anything derived from them, including operator-typed rows; lowering below `min_class` returns 422; `buget.banda` visible only after consent | integration, api |
 | M0b | Only operator requests produce `decision.set` | api |
 | M0b | Session tokens: tools, tier, objects, lifetime; revoked on suspend | integration |
 | M0b | `llm-proxy` rejects other models and paths, fails closed, survives a restart without losing usage, enforces the run cap; monthly cap suspends sessions; revoked token | integration |
@@ -911,13 +928,14 @@ The gateway must be on the same host or reached over TLS.
 | M0b | Session files bound to their session and deleted at the end | integration |
 | M0b | `store_source` provenance (`host_contacted`), classification of web content, `draft_email` recipient and attachment rules, `propose_knowledge_change` refusal | integration |
 | M0c | `task.completed` refused per missing part and unconfirmed detail; payment recorded, superseded on resubmission, "paid" sum | api, application |
+| M0c | `just knowledge-check` lists a ref changed outside `knowledge/*` | integration |
 | M0c | Knowledge commits leave the working tree and index untouched; bad paths refused on read and write; one pending change per path; overlay retired and migrated on schema bump; `content_verified` refuses a mismatching snapshot | integration |
 | M0c | Pattern scanner and records scanner; log scan for CNP/IBAN | unit |
 | M0c | Document serving headers per MIME type; 49 MB upload succeeds, 51 MB returns a 413 problem | e2e |
 | M0c | Working-day deadlines across holidays; missing year; clock at 30 Sep and 1 Oct | unit |
 | M0c | Frontend: proof parts, uploads with progress, approvals with edit and consent scope, task confirmations | component |
 | M1 | Eligibility for every condition combination; rules file missing | unit |
-| M1 | Budget estimates and credit estimate (deterministic); FX last banking day; 2.1% vs 1.9% rate move; missing rate | unit |
+| M1 | Budget estimates, credit estimate and cash-flow shortfall months from mixed funding sources (lump sum, monthly, `incert` excluded) (deterministic); FX last banking day; 2.1% vs 1.9% rate move; missing rate | unit |
 | M1 | Override survival; proposal supersede and stale; budget alerts; preview returns impacts | application, api |
 | M1 | Frontend: value-type presenters, decision field with proposal and privacy dialog, allocation panel with live preview, eligibility display | component |
 | M2 | Minimum plot formula; smallest-minimum residential zone; locality validation with `de_verificat` acceptance; routing unavailable | unit |
@@ -925,6 +943,7 @@ The gateway must be on the same host or reached over TLS.
 | M3 | Gmail OAuth `state`/PKCE; sync idempotent and recovers from expired `historyId`; `cid:` rewrite | integration |
 | M3 | Outbox never sends twice across a crash, a restore or a rollback; deleted draft → `failed(draft_missing)`; real-mailbox contract test | integration |
 | M3 | Plot merge suggestion and merge; plot status projection; step 3 unaffected by new candidates; shortlist can-complete | integration, unit |
+| M3 | Remote images: only recorded URLs are fetched; non-image bytes refused; served with `nosniff` and `CSP: sandbox` | integration, e2e |
 | M3 | Mail frame: no script runs, links open a new tab, height measured; PDF scripts do not execute | e2e |
 | M4 | `nu` verdict removes the plot from the active shortlist without reopening step 3 | application |
 | M4 | `selected_subject` quantifier for step 4; old-law CU is informational only | unit |
@@ -942,7 +961,7 @@ Built in workflow order (FS §14). Each milestone exits when its inventory rows 
 | M0a — Platform slice | Compose stack, `migrate`, SQLite settings, kernel, event log and bus, session and CSRF, projections and revalidation, one decision end to end (spec → form → `PUT` → revalidation → event → SSE → UI), proposals seeded by a test fixture, step state machine, API conventions and type generation, frontend shell (layout, routes, `AsyncState`, stream leader, i18n), backup/restore/upgrade/rollback, both `project_structure.md` files |
 | M0b — Agents and safety | Launcher, per-session networks and run containers, `llm-proxy`, `egress-proxy`, `backend-control`, `backend-mcp` with tools and session files, privacy tiers, watermark and consent, views, envelope, suspend/resume, reconciliation, retries, idempotency, metering and caps |
 | M0c — Operator loop | Tasks with proof and confirmations, approvals and handlers, documents and extractor, sources, snapshots and content verification, knowledge read/overlay/commit, scheduling and deadlines, notifications, health, retention |
-| M1 — Step 1 | Brief, cost and lending research, deterministic estimates, budget and currency, eligibility, bank pre-approval task |
+| M1 — Step 1 | Brief, funding sources and cash-flow timeline, cost and lending research, deterministic estimates, budget and currency, eligibility, bank pre-approval task (when a bank loan is a source) |
 | M2 — Step 2 | Localities from SIRUTA, distances, listing samples and price per m², locality validation, RLU fetch into knowledge |
 | M3 — Step 3 | Listing watcher, dedupe and merges, plot sheet, zones, filters, map, Gmail connection and sync, seller emails with the outbox |
 | M4 — Step 4 | `cf-reader`, CU type selection and reading, connection costs, verdict, ANCPI and CU tasks, `proof-checker` |

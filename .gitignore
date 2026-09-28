@@ -1,4 +1,6 @@
 data/
 s3/
 backups/
-deploy/.env
+state/
+deploy/secrets/*
+!deploy/secrets/.gitkeep
