@@ -94,12 +94,13 @@ flowchart TD
 
 | From | What happens | To |
 | --- | --- | --- |
-| `blocked` | Every step it depends on is `done` (for step 8: `7a` **or** `7n`) | `available` |
+| `blocked` | Every step it depends on is `done` (for step 8: `7a` **or** `7n`) | `available`, or `in_progress` if one of its decisions was already set |
+| `blocked` | The operator sets a decision in the step | `blocked` (unchanged) |
 | `available` | The operator sets a decision, or an agent run starts on the step | `in_progress` |
 | `in_progress` | The operator presses **Done** (allowed only when the step can complete, below) | `done` |
 | `done` | The operator reopens the step, or edits one of its decisions | `in_progress`; dependent `done` steps → `needs_revalidation` |
 | `done` | A decision it depends on changes, a check it owns changes result, or an earlier step leaves `done` | `needs_revalidation` |
-| `needs_revalidation` | The operator reviews the impact and confirms | `done` |
+| `needs_revalidation` | The operator reviews the impact and confirms (allowed only when the step can complete) | `done` |
 | `needs_revalidation` | The operator changes a decision in the step | `in_progress` |
 | any | `proiect.procedura` selects the other branch of step 7 | `not_applicable` |
 | `not_applicable` | `proiect.procedura` changes back to this branch | `blocked` or `available`, as its dependencies allow |
@@ -136,18 +137,19 @@ flowchart TD
 | `procedura.tinta` | enum `notificare`, `autorizare`, `indiferent` | yes | Target procedure (§6) |
 | `finantare.surse` | list of funding sources | yes | At least one. Each source: kind (`economii` own savings or money already available, `credit_bancar` bank loan, `imprumut_familie` loan from family or friends, `venituri_viitoare` future earnings set aside over time, `altele` other), amount (a lump sum, or a monthly amount with a start and an end month), availability date, certainty (`sigur` confirmed, `probabil` likely, `incert` uncertain), and a free note |
 | `finantare.venit_net_lunar` | money | no | Household net monthly income; used only for the bank-loan estimate when a `credit_bancar` source exists |
-| `buget.categorii` | allocation per category | yes | Planned amount per budget category (below) |
+| `buget.teren_max` | money | yes | Land budget: the most the operator will pay for a plot, typed by the operator. Web agents use it to filter listings (§12) |
+| `buget.cote` | share per category | yes | How the money left after the land is split across the other categories (below), as percentages adding up to 100%; an agent proposes it from the cost estimates |
 
-**Derived values:** `buget.total` (the sum of the `sigur` and `probabil` funding sources; `incert` sources are shown apart and not counted; the operator may override it), `finantare.flux` (cash-flow timeline: money available per month from the sources' dates, against the planned spending order of the categories; months with a shortfall are flagged), `buget.teren_max` (the land category of `buget.categorii`), `buget.rezerva_ratio` (the reserve category as a share of the total), `buget.estimare` (Tekton's estimate per category, from the brief and the researched unit costs), `finantare.credit_estimat` (Tekton's bank-loan estimate, from the declared income and the researched lending rules; only when a `credit_bancar` source exists). All `finantare.*` values, entered or derived, are `local_only` (§12): they are computed by Tekton on the machine and are never shown to cloud or web agents.
+**Derived values:** `buget.total` (the sum of the `sigur` and `probabil` funding sources; `incert` sources are shown apart and not counted; the operator may override it), `buget.categorii` (planned amount per category: the land budget for `teren`, and (`buget.total` − `buget.teren_max`) × share for each other category; the operator may override any amount), `finantare.flux` (cash-flow timeline: money available per month from the sources' dates, against the planned spending order of the categories; months with a shortfall are flagged), `buget.rezerva_ratio` (the reserve category as a share of the total), `buget.estimare` (Tekton's estimate per category, from the brief and the researched unit costs), `finantare.credit_estimat` (Tekton's bank-loan estimate, from the declared income and the researched lending rules; only when a `credit_bancar` source exists). All `finantare.*` values, entered or derived, `buget.total` and the planned amounts of `buget.categorii` (which add up to the total) are `local_only` (§12): they are computed by Tekton on the machine and are never shown to cloud or web agents. Agents see the land budget and the shares, never an amount that reveals the total.
 
-**Checks:** the allocation adds up to at most `buget.total`; the cash-flow timeline has no shortfall month before the planned end of construction (a warning, not a blocker, while any source is `incert`); the reserve is between 10% and 15%; the rooms fit in the floor area (sum of room areas × 1.2 for walls and circulation ≤ floor area). While the operator edits the allocation, the totals and the reserve share update live.
+**Checks:** the land budget is at most `buget.total`, and the shares add up to 100%; the cash-flow timeline has no shortfall month before the planned end of construction (a warning, not a blocker, while any source is `incert`); the reserve is between 10% and 15%; the rooms fit in the floor area (sum of room areas × 1.2 for walls and circulation ≤ floor area). While the operator edits the land budget, the shares or an amount, the planned amounts, the totals and the reserve share update live.
 
 **Budget categories:** `teren` (land); `notar_taxe` (notary, taxes and land registration); `proiectare_studii` (architect, topographic survey, geotechnical study, engineers); `avize_taxe` (approvals and fees); `racordari` (utility connections); `constructie` (construction, by stage later); `curte` (yard and fences); `mobilare` (furnishing, optional); `rezerva` (reserve, 10–15%).
 
 **What agents do**
 
 - Research unit costs for the region (cost per m² for construction, notary fees, design fees, utility connection tariffs) and current lending rules (maximum debt-to-income ratio, rates, terms, down payment), from public sources. These agents see only public data and the brief.
-- Tekton turns them into the estimates above with fixed formulas, locally; no agent reads any `finantare.*` value. An agent proposes the planned amounts (`buget.categorii`) and the footprint from the cost estimates and the land budget only. If the operator wants agent help that needs the total, they can share a coarse budget band (for example "250–300k EUR") through the consent dialog (§12); the exact sources, amounts, dates and income are never shared.
+- Tekton turns them into the estimates above with fixed formulas, locally; no agent reads any `finantare.*` value. An agent proposes the shares (`buget.cote`) from the cost estimates (`buget.estimare`, computed from the brief and public unit costs); Tekton turns them into amounts locally. If the operator wants agent help that needs the size of the budget, they can share a coarse budget band (for example "250–300k EUR") through the consent dialog (§12); the exact sources, amounts, dates and income are never shared.
 - Compute notification eligibility from the brief (§6) and explain which fields break it.
 
 **Operator tasks:** only when a `credit_bancar` source exists, talk to 1–3 banks for a pre-approval (pre-aprobare); the agent prepares the documents list and the questions from public lending rules, and the proof is the bank's written offer or a meeting-result form, which updates that source's amount and certainty. For a `imprumut_familie` source, an optional task records the agreement (amount, date, repayment terms) with a signed note or message as proof.
@@ -180,11 +182,11 @@ flowchart TD
 - the zone of a future plot is unknown, so Tekton uses the residential zone of the RLU with the smallest minimum plot, names that zone, and marks the result *de verificat* until step 3 knows the plot's zone
 - it passes if *price per m² × minimum plot needed ≤ `buget.teren_max`*
 - EUR prices are converted at the BNR rate of the day the validation ran; the rate is shown, and a later rate change re-runs the validation only when it moves more than 2%.
-- If `procedura.tinta = notificare`, localities belonging to a `comuna` pass; villages belonging to an `oras` or `municipiu`, and UATs in a metropolitan area, are marked *de verificat*; the town itself is marked "breaks notification" (§6).
+- **Notification compatibility** is a separate line on the locality row, shown only when `procedura.tinta = notificare`: localities belonging to a `comuna` pass; villages belonging to an `oras` or `municipiu`, and UATs in a metropolitan area, are marked *de verificat*; the town itself is marked "breaks notification" (§6). The budget validation above does not depend on it.
 
 **Operator tasks:** optional visit to the area (a task with a checklist the agent prepares).
 
-**Can complete** when at least one locality in `zona.localitati` passes validation or is *de verificat* (not failing); *de verificat* is shown as a warning.
+**Can complete** when at least one locality in `zona.localitati` passes validation or is *de verificat* (not failing), and, when the target is notification, is not marked "breaks notification"; *de verificat* is shown as a warning.
 
 **Revalidation link:** a budget or brief change in step 1, or a price-per-m² refresh, re-runs the validation of every locality.
 
@@ -254,9 +256,11 @@ The Plots screen owns the plot list, map and sheet; steps 3 and 4 link to it wit
 | Key | Type | Scope | Req. | Notes |
 | --- | --- | --- | --- | --- |
 | `teren.verdict` | verdict (`da`, `nu`, `de_verificat`, with reasons and risks) | per plot | for the chosen plot | Proposed by an agent, set by the operator |
+| `teren.tip_cu` | enum of the five CU types of Law 169/2026 | per plot | no | Proposed by an agent, set by the operator |
+| `teren.cu_emis_on`, `teren.cu_valabil_pana_on` | date | per plot | no | The CU's issue date and validity; proposed by the agent that reads the CU, set by the operator; they drive the CU deadlines (§10) |
 | `teren.ales` | plot | project | yes | The plot to buy; its verdict must be `da` |
 
-- `nu` marks the plot `respins` with the reason, so it leaves the active shortlist; step 3 stays done, and the operator continues with another shortlisted plot or goes back to step 3.
+- `nu` marks the plot `respins` with the reason, so it leaves the active shortlist. Step 3 stays done while at least one active plot remains, and the operator continues with another shortlisted plot; when the rejected plot was the last one, step 3 moves to `needs_revalidation` and step 4 shows "no plot left, go back to step 3".
 - `de_verificat` keeps the step in progress and creates the tasks needed to resolve the open points.
 - `da` lets the operator choose it: **`teren.ales`** (the plot to buy). The step can complete when `teren.ales` is set and its verdict is `da`.
 
@@ -332,7 +336,7 @@ Derived values are computed by Tekton, never typed by an agent. Each shows its f
 
 ### 4.12 Agent proposals [v1]
 
-An agent never sets a decision. It **proposes** a value, with rationale and sources. The proposal appears **inline next to the field** in the step: "Agent suggests 42,000 EUR · 3 sources · Accept / Edit / Reject". Accepting or editing records the decision as the operator's; rejecting records the reason, which the agent sees on its next run. A proposal based on personal documents stays *local only* when accepted, unless the operator chooses to release it in the same dialog. The Home screen shows a **needs your attention** list that counts pending proposals, operator tasks and approval requests, each linking to where it is handled.
+An agent never sets a decision. It **proposes** a value, with rationale and sources. The proposal appears **inline next to the field** in the step: "Agent suggests 42,000 EUR · 3 sources · Accept / Edit / Reject". Accepting or editing records the decision as the operator's; rejecting records the reason, which the agent sees on its next run. A proposal based on personal documents stays *local only* when accepted, unless the operator chooses to release it in the same dialog. A proposal whose only private input was the released budget band can be kept as the operator's own input, so web agents can still use it. The Home screen shows a **needs your attention** list that counts pending proposals, operator tasks and approval requests, each linking to where it is handled.
 
 ## 5. Budget (cross-cutting) [v1 for steps 1–4]
 
@@ -464,13 +468,13 @@ Watchers are scheduled jobs that run while the stack is up. Some start agent run
   - `personal_local` (**local only**): the default for anything the operator uploads, and for email and attachments
   - `personal_cloud` (**cloud allowed**): after the operator's consent, per document, email thread or sender
 - **Derived data inherits the class.** Text extracted from a document, agent results computed from `personal_local` data, and anything an agent writes after reading such data are `personal_local` too. Only the operator can lower a class, after a confirmation that names what changes; each change is recorded.
-- **Financing stays local.** Everything under financing (funding sources, amounts, dates, certainty, income, the loan estimate, the cash-flow timeline) and the budget total are local only, even though the operator typed them; Tekton computes the estimates itself on the machine, and no consent can release them except as a coarse budget band.
+- **Financing stays local.** Everything under financing (funding sources, amounts, dates, certainty, income, the loan estimate, the cash-flow timeline) the budget total and the planned amounts per category are local only, even though the operator typed them; Tekton computes the estimates itself on the machine, and no consent can release them except as a coarse budget band.
 - **What agents see** depends on their tier:
 
 | Tier | Who | Sees |
 | --- | --- | --- |
-| Web | Agents that browse the internet | Public data and the brief they need to search: house type, levels and basement, floor area and footprint (to filter plots by the rules), target procedure (to filter by notification), land budget (to filter by price), travel criteria and candidate localities (where to search), and the shortlist (which plots to watch). Never financing data (`finantare.*`: sources, amounts, dates, income) or personal documents, and never a value that came from a personal document |
-| Cloud | Agents on cloud models without web access | Public data, what the operator typed (brief, budget allocation, rationale) except financing, `personal_cloud` data. Never `finantare.*` or the budget total; a coarse budget band only if the operator releases it (consent dialog) |
+| Web | Agents that browse the internet | Public data and the brief they need to search: house type, levels and basement, floor area and footprint (to filter plots by the rules), target procedure (to filter by notification), land budget (to filter by price), travel criteria and candidate localities (where to search), and the shortlist (which plots to watch). Never financing data (`finantare.*`: sources, amounts, dates, income) or personal documents, and never a value that came from a personal document. Whatever a web agent reads, a site it visits could learn if the agent were hijacked by a page; the list is kept this short for that reason |
+| Cloud | Agents on cloud models without web access | Public data, what the operator typed (brief, land budget, budget shares, rationale) except financing, `personal_cloud` data. Never `finantare.*`, the budget total or the planned amounts per category (they add up to the total); a coarse budget band only if the operator releases it (consent dialog) |
 | Local only | Agents on local models, no web access | Everything |
 
 - If no local model is available, local-only work waits and the UI says so, offering to release the data for a cloud run instead (a `privacy_consent` request).
