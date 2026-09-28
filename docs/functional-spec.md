@@ -102,9 +102,10 @@ flowchart TD
 | `needs_revalidation` | The operator reviews the impact and confirms | `done` |
 | `needs_revalidation` | The operator changes a decision in the step | `in_progress` |
 | any | `proiect.procedura` selects the other branch of step 7 | `not_applicable` |
+| `not_applicable` | `proiect.procedura` changes back to this branch | `blocked` or `available`, as its dependencies allow |
 
 - While an earlier step is not `done`, a later step is **shown** as blocked, but its recorded state (e.g. `needs_revalidation`) is kept and returns when the earlier step is done again.
-- **Can complete** when every required decision is set, every required check passes, no proposal on a required decision is pending, and no required operator task is open. For decisions per plot or per locality the step says which subjects count: step 2 needs at least one validated locality, step 4 needs the chosen plot. Tekton computes this and lists the blocking items; the Done button explains why it cannot be pressed.
+- **Can complete** when every required decision is set, every required check passes, no proposal on a required decision is pending, and every required operator task is resolved (completed with its proof verified, or cancelled). A check can pass, fail or be *de verificat*; each step says whether *de verificat* is acceptable, and then shows it as a warning (step 2 accepts it, because the zone of a future plot is not known yet). For decisions per plot or per locality the step says which subjects count: step 2 needs at least one locality in `zona.localitati` that is not failing, step 4 needs the chosen plot. Only changes to those subjects move a done step back to revalidation; a new candidate plot does not reopen step 3. Tekton computes this and lists the blocking items; the Done button explains why it cannot be pressed.
 - **Each step screen shows:**
   - the earlier decisions it depends on
   - its decisions, each with any pending agent proposal next to it (§4.12)
@@ -130,7 +131,7 @@ flowchart TD
 | `casa.regim_inaltime` | enum `p`, `d_p`, `p_m`, `p_1`, `d_p_1`, `p_1_m` | yes | Levels (parter, demisol + parter, mansardă, etaj) |
 | `casa.subsol` | boolean | yes | Basement |
 | `casa.suprafata_desfasurata_mp` | area (m²) | yes | Gross floor area |
-| `casa.amprenta_mp` | area (m²) | yes | Footprint; an agent proposes it from the floor area and levels, with its assumptions |
+| `casa.amprenta_mp` | area (m²) | yes | Footprint; an agent proposes it from the floor area and levels, stating how mansard and demisol levels were counted |
 | `casa.locuire` | enum `permanenta`, `sezoniera` | yes | Permanent or seasonal |
 | `procedura.tinta` | enum `notificare`, `autorizare`, `indiferent` | yes | Target procedure (§6) |
 | `finantare.venit_net_lunar` | money | no | Household net monthly income, used for the loan ceiling |
@@ -139,17 +140,16 @@ flowchart TD
 | `finantare.credit_max` | money | when a loan is used | Bank lending ceiling |
 | `buget.categorii` | allocation per category | yes | Planned amount per budget category (below) |
 
-**Derived values:** `buget.total` (own funds + loan ceiling; the operator may override it), `buget.teren_max` (the land category of `buget.categorii`), `buget.rezerva_pct` (the reserve category as a share of the total).
+**Derived values:** `buget.total` (own funds + loan ceiling; the operator may override it), `buget.teren_max` (the land category of `buget.categorii`), `buget.rezerva_ratio` (the reserve category as a share of the total), `buget.estimare` (Tekton's estimate per category, from the brief and the researched unit costs), `finantare.credit_estimat` (Tekton's loan estimate, from the declared income and the researched lending rules).
 
-**Checks:** the allocation adds up to at most `buget.total`; the reserve is between 10% and 15%; the rooms fit in the floor area. While the operator edits the allocation, the totals and the reserve share update live.
+**Checks:** the allocation adds up to at most `buget.total`; the reserve is between 10% and 15%; the rooms fit in the floor area (sum of room areas × 1.2 for walls and circulation ≤ floor area). While the operator edits the allocation, the totals and the reserve share update live.
 
 **Budget categories:** `teren` (land); `notar_taxe` (notary, taxes and land registration); `proiectare_studii` (architect, topographic survey, geotechnical study, engineers); `avize_taxe` (approvals and fees); `racordari` (utility connections); `constructie` (construction, by stage later); `curte` (yard and fences); `mobilare` (furnishing, optional); `rezerva` (reserve, 10–15%).
 
 **What agents do**
 
-- Research costs per category for the brief and the region (cost per m² for construction, notary fees, design fees, utility connection costs), with sources, and propose the planned amounts. The web research sees only the brief and the region; a separate agent without web access combines the results with the operator's finances.
-- Research lending: current mortgage offers and down payment rules from bank sites; a separate agent without web access applies them to the declared income and proposes `finantare.credit_max`.
-- Propose the footprint from the floor area and levels, stating how mansard and demisol levels were counted.
+- Research unit costs for the region (cost per m² for construction, notary fees, design fees, utility connection tariffs) and current lending rules (maximum debt-to-income ratio, rates, terms, down payment), from public sources. These agents see only public data and the brief.
+- Tekton turns them into the estimates above with fixed formulas; no agent reads the operator's income. An agent then proposes the planned amounts (`buget.categorii`), the loan ceiling (`finantare.credit_max`) and the footprint, from those estimates.
 - Compute notification eligibility from the brief (§6) and explain which fields break it.
 
 **Operator tasks:** talk to 1–3 banks for a pre-approval (pre-aprobare). The agent prepares the documents list and the questions; the proof is the bank's written offer or a meeting-result form.
@@ -158,18 +158,23 @@ flowchart TD
 
 **Goal:** choose the localities where to search.
 
-**Decisions:** `zona.criterii` (max travel times to the city, hospital, school, transport; required), `zona.localitati` (ranked list of candidate localities; required).
+**Decisions**
+
+| Key | Type | Req. | Notes |
+| --- | --- | --- | --- |
+| `zona.criterii` | distance criteria | yes | Per destination (a named city, hospital, school, transport, shops): maximum travel time |
+| `zona.localitati` | ranked list of localities | yes | Candidate localities, best first |
 
 **Locality entity (Localitate):** SIRUTA code, name, UAT and its type (`comuna`, `oras`, `municipiu`), whether the UAT is in a metropolitan area, distances and travel times, known utilities (water, sewage, gas, electricity, internet), known protected zones, price per m², validation status.
 
-- Localities come from the national SIRUTA list. The operator can add one by name; agents add neighbours of the chosen ones.
+- Localities come from the national SIRUTA list. The operator can add one by searching its name (with or without diacritics); agents add neighbours of the chosen ones.
 - **Price per m²** is computed by Tekton from the listing samples agents collect (price, area, intravilan land only, link, date): median, spread and sample size, shown with every listing behind it.
 
 **What agents do**
 
 - Compute distances and travel times from OpenStreetMap data (a system job): to the city, hospitals, schools, transport, shops.
 - **Collect land listings from listing sites** (imobiliare.ro, OLX, storia, and others) per locality, within the site limits of §10, and store them as samples.
-- Fetch the UAT's PUG/RLU into the knowledge base if missing (§11).
+- Fetch the UAT's PUG/RLU into the knowledge base if missing (§11). If the town hall provides it only at the counter, the operator uploads the copy and confirms where it came from; the rules are then used, marked *de verificat*.
 
 **Validation of each locality:**
 
@@ -192,7 +197,8 @@ flowchart TD
 **Plot entity (Teren):** listing links (one plot may appear on several sites), locality, location, cadastral number (număr cadastral) if known, area, price, frontage, access, utilities, intravilan status, **RLU zone** (with its source and status: confirmed, inferred, unknown), own lot and own access, inside a protected zone, PUG compliance, photos, seller contact.
 
 - **Identity:** the cadastral number when known; otherwise site + listing id. When agents find the same plot on another site, they link the listing to the existing plot; two plots found to be the same are merged, and everything that pointed to either now points to the surviving one.
-- **Status** is shown, never set by agents, and follows from the decisions: `candidat` (found), `pe_lista_scurta` (in `teren.lista_scurta`), `respins` (verdict `nu`, or dismissed by the operator with a reason), `ales` (`teren.ales`), `cumparat` (step 5). A listing removed from its site is flagged, not rejected.
+- **Status** is shown, never set by agents, and follows from the decisions: `candidat` (found), `pe_lista_scurta` (in `teren.lista_scurta` and not rejected), `respins` (verdict `nu`, or dismissed by the operator with a reason), `ales` (`teren.ales`), `cumparat` (step 5). A listing removed from its site is flagged, not rejected.
+- When agents suspect two plots are the same, they suggest a merge; the operator confirms it on the Plots screen (it also counts in *needs your attention*).
 
 **What agents do**
 
@@ -208,7 +214,15 @@ flowchart TD
 
 **Operator tasks:** phone the seller (the agent prepares the questions); visit the plot (with a checklist: access, slope, neighbours, water, power lines, photos).
 
-**Decision:** `teren.lista_scurta` (list of plots). **Can complete** when it holds at least one plot that is not `respins`.
+**Decisions**
+
+| Key | Type | Req. | Notes |
+| --- | --- | --- | --- |
+| `teren.lista_scurta` | list of plots | yes | The shortlist chosen by the operator |
+
+**Derived value:** `teren.lista_scurta_activa` — the shortlist without rejected plots.
+
+**Can complete** when the active shortlist holds at least one plot.
 
 The Plots screen owns the plot list, map and sheet; steps 3 and 4 link to it with the right filters.
 
@@ -237,9 +251,14 @@ The Plots screen owns the plot list, map and sheet; steps 3 and 4 link to it wit
 - Pick up the CU if it isn't delivered electronically. Proof: the CU document.
 - Get an architect's opinion (call or meeting). Proof: the call- or meeting-result form, or the architect's written note.
 
-**Decisions (per plot):** `teren.verdict` = `da`, `nu` or `de_verificat`.
+**Decisions**
 
-- `nu` marks the plot `respins` with the reason and removes it from the shortlist (a new version of `teren.lista_scurta`); the operator continues with another shortlisted plot or goes back to step 3.
+| Key | Type | Scope | Req. | Notes |
+| --- | --- | --- | --- | --- |
+| `teren.verdict` | verdict (`da`, `nu`, `de_verificat`, with reasons and risks) | per plot | for the chosen plot | Proposed by an agent, set by the operator |
+| `teren.ales` | plot | project | yes | The plot to buy; its verdict must be `da` |
+
+- `nu` marks the plot `respins` with the reason, so it leaves the active shortlist; step 3 stays done, and the operator continues with another shortlisted plot or goes back to step 3.
 - `de_verificat` keeps the step in progress and creates the tasks needed to resolve the open points.
 - `da` lets the operator choose it: **`teren.ales`** (the plot to buy). The step can complete when `teren.ales` is set and its verdict is `da`.
 
@@ -374,7 +393,7 @@ A dedicated inbox, always visible, with a counter. It is the main place the oper
 | `intalnire` (meeting) | Architect, bank | Meeting-result form and any documents received |
 | `cont` (account setup) | **Create the project Gmail** and connect it | The connection succeeds (checked automatically) |
 
-- **Payment details are checked by the operator.** For `plata` tasks, the payee, IBAN and amount show where the agent found them; details that come from an email or a web page are marked *unverified* until the operator confirms them in the task.
+- **Payment details and links are checked by the operator.** For `plata` and `portal` tasks, the payee, IBAN, amount and any link show where the agent found them; details that come from an email or a web page, and links outside the official sites, are marked *unverified* until the operator confirms them in the task. Links always show their site.
 - The **Done** button explains what is missing until every required proof item is attached. Files are uploaded first (with progress), then attached as proof items.
 - After closing, an agent **checks the proof** (amount and date on the receipt, registration number format, signatures present). On a mismatch the task reopens with an explanation. If no local model is available, the operator can confirm the proof themselves, or release it for a cloud check. A run waiting on the task continues after the check passes, the operator confirms it, or the task is cancelled.
 - Tasks are created by agents or watchers, or manually by the operator, who picks a type; the type sets the proof.
@@ -391,7 +410,8 @@ Approval requests cover **outbound actions and privacy**, not decisions (decisio
 
 - They are created by Tekton when the agent drafts or proposes; the screen is rendered from what will actually happen, and the agent's explanation appears in a separate, labelled block.
 - The operator can approve, reject with a reason, or edit and approve (email text and knowledge content can be edited; consent cannot). An edit is checked again before it is applied.
-- The agent run waits and resumes after the answer, even days later. A run that waits for more than 30 days is cancelled and the operator is told.
+- A privacy consent can be given **for this run only** (the default) or **always** for that document, thread or sender.
+- The agent run waits and resumes after the answer, even days later. A run that waits for more than 30 days is cancelled, its pending requests expire, and the operator is told.
 - **Not gated:** reading public web pages, listing sites and public registers. These are logged with their sources.
 
 ## 9. Project mailbox and email [v1]
@@ -400,6 +420,7 @@ Approval requests cover **outbound actions and privacy**, not decisions (decisio
 - **Sending** is configured per message type. Each type is either `draft_only` (Tekton keeps the draft; the operator can copy it or push it to Gmail's drafts with one click and send it from there) or `send_after_approval`.
   - Types: `intrebare_vanzator` (seller questions), `cerere_informatii_primarie` (requests to the town hall), `cerere_oferta` (quote requests: architect, survey, geotechnical study, builders), `urmarire_aviz` (follow-ups on approvals), `raspuns_fir` (replies in existing threads).
   - Default: `send_after_approval`.
+- **Recipients:** agents write only to people already in the thread, to contacts stored with the plot, locality or professional the run is about (the approval shows where each address came from), or to contacts the operator confirmed. A personal attachment is flagged in the approval.
 - **Reading:** agents read incoming mail in the project mailbox. They link each thread to its step and entity (plot, professional, approval), extract facts as proposals, and create tasks.
 - **Privacy:** mail is *local only* by default. The operator can mark a thread, or a sender for all future messages, as *cloud allowed* (§12), after a confirmation that says what changes.
 - Email content is **untrusted**. Instructions inside an email are never followed; they are shown to the operator as content. Emails are displayed safely: no scripts, no remote images unless the operator asks, links open in a new tab.
@@ -449,7 +470,7 @@ Watchers are scheduled jobs that run while the stack is up. Some start agent run
 
 | Tier | Who | Sees |
 | --- | --- | --- |
-| Web | Agents that browse the internet | Public data and the parts of the brief they need (house type, levels, floor area, footprint, land budget, candidate localities). Never income, own funds, loans or personal documents |
+| Web | Agents that browse the internet | Public data and the brief they need to search: house type, levels and basement, floor area and footprint (to filter plots by the rules), target procedure (to filter by notification), land budget (to filter by price), travel criteria and candidate localities (where to search), and the shortlist (which plots to watch). Never income, own funds, loans or personal documents, and never a value that came from a personal document |
 | Cloud | Agents on cloud models without web access | Public data, everything the operator typed (brief, budget, financing), `personal_cloud` data |
 | Local only | Agents on local models, no web access | Everything |
 
