@@ -32,8 +32,21 @@ function is_git_commit_command() {
       case "${char}" in
         "'"|"\"") quote=${char} ;;
         \\) escaped=1 ;;
-        " "|$'\t'|$'\n')
+        " "|$'\t')
           if [ -n "${token}" ]; then words+=("${token}"); token=""; fi
+          ;;
+        $'\n')
+          if [ -n "${token}" ]; then words+=("${token}"); token=""; fi
+          words+=(";")
+          ;;
+        \#)
+          if [ -z "${token}" ]; then
+            while [ "${index}" -lt "${length}" ] && [ "${command_text:${index}:1}" != $'\n' ]; do
+              index=$((index + 1))
+            done
+          else
+            token+="${char}"
+          fi
           ;;
         \;|\&|\|)
           if [ -n "${token}" ]; then words+=("${token}"); token=""; fi
