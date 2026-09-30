@@ -2,7 +2,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ESLint } from "eslint";
-import { customArchitectureRuleIds } from "../../eslint.config.js";
 
 const frontendRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -30,7 +29,8 @@ const architectureRuleFixtures = [
   {
     ruleId: "architecture/no-feature-api-in-pages",
     shouldFlag: {
-      source: "<script setup>import { getHome } from '@/features/home/api/homeApi'</script>",
+      source:
+        "<script setup>import { getHome } from '@/features/home/api/homeApi'</script>",
       path: "src/features/home/HomePage.vue",
     },
     shouldPass: {
@@ -64,9 +64,15 @@ describe("frontend architecture rules", () => {
     const fixtureRuleIds = architectureRuleFixtures.map(
       (fixture) => fixture.ruleId,
     );
-    expect(fixtureRuleIds.toSorted()).toEqual(
-      [...customArchitectureRuleIds].toSorted(),
+    const sourceConfiguration = await eslint.calculateConfigForFile(
+      path.join(frontendRoot, "src/features/home/HomePage.vue"),
     );
+    const architecturePlugin = sourceConfiguration?.plugins.architecture;
+    const configuredRuleIds = Object.keys(architecturePlugin?.rules ?? {}).map(
+      (ruleName) => `architecture/${ruleName}`,
+    );
+
+    expect([...fixtureRuleIds].sort()).toEqual(configuredRuleIds.sort());
 
     for (const fixture of architectureRuleFixtures) {
       const flaggedDiagnostics = await lintSource(

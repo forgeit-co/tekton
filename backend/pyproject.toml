@@ -41,6 +41,7 @@ failOnWarnings = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["deployment: reads an operator-provisioned deployment"]
 
 [tool.importlinter]
 root_package = "tekton"

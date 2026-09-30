@@ -4,7 +4,10 @@ import time
 from urllib.error import URLError
 from urllib.request import urlopen
 
+import pytest
 
+
+@pytest.mark.deployment
 def test_local_deployment_health_and_frontend() -> None:
     port = os.environ.get("TEKTON_HOST_PORT", "8080")
     base_url = f"http://127.0.0.1:{port}"
@@ -33,7 +36,8 @@ def test_local_deployment_health_and_frontend() -> None:
         with urlopen(root_url, timeout=5) as response:
             if response.status != 200:
                 raise AssertionError(
-                    f"Deployment frontend root {root_url} returned HTTP {response.status}, expected 200"
+                    f"Deployment frontend root {root_url} returned HTTP "
+                    f"{response.status}, expected 200"
                 )
     except (OSError, URLError) as error:
         raise AssertionError(f"Deployment frontend root {root_url} failed: {error}") from error
@@ -43,7 +47,8 @@ def test_local_deployment_health_and_frontend() -> None:
         with urlopen(health_url, timeout=5) as response:
             if response.status != 200:
                 raise AssertionError(
-                    f"Deployment health endpoint {health_url} returned HTTP {response.status}, expected 200"
+                    f"Deployment health endpoint {health_url} returned HTTP "
+                    f"{response.status}, expected 200"
                 )
             payload = json.loads(response.read())
     except (OSError, URLError, json.JSONDecodeError) as error:
@@ -51,5 +56,6 @@ def test_local_deployment_health_and_frontend() -> None:
 
     if not isinstance(payload, dict) or not payload.get("status"):
         raise AssertionError(
-            f"Deployment health endpoint {health_url} must return JSON with a status field; got {payload!r}"
+            f"Deployment health endpoint {health_url} must return JSON with a "
+            f"status field; got {payload!r}"
         )

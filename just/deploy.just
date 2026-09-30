@@ -11,7 +11,7 @@ local-deploy-down:
 # [python] Read the running local stack and report deployment health.
 # Precondition: `just local-deploy-up` completed and the stack is running.
 local-backend-deploy-check:
-  TEKTON_HOST_PORT="$(just --evaluate host_port)" uv run --directory backend --group dev pytest -n 0 -s deployment_checks
+  TEKTON_HOST_PORT="$(just --evaluate host_port)" uv run --directory backend --group test pytest -n 0 -s -m deployment deployment_checks
 
 # Build the production backend image.
 prod-backend-build:
