@@ -1,5 +1,6 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, readdirSync } from "node:fs";
+import { defineConfig } from "eslint/config";
 import js from "@eslint/js";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
 import pluginVue from "eslint-plugin-vue";
@@ -8,14 +9,85 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 const sourceMarker = "/src/";
+const domainRoot = new URL("./src/shared/domains/", import.meta.url);
 
-// The allowed domain DAG generates the domain-to-domain boundary check.
-const domainDependencies = {
-  decisions: ["value-types", "sources"],
-  proposals: ["value-types", "sources"],
-  tasks: ["documents", "budget"],
-  approvals: ["sources"],
-};
+const structureDocument = readFileSync(
+  new URL("./project_structure.md", import.meta.url),
+  "utf8",
+);
+
+function readDomainDependencies(document) {
+  const documentLines = document.split("\n");
+  const tableStart = documentLines.findIndex((line) =>
+    /^\|\s*Domain\s*\|\s*Allowed domain dependencies\s*\|$/.test(line),
+  );
+  if (tableStart === -1) {
+    throw new Error(
+      "project_structure.md must declare the shared-domain DAG table.",
+    );
+  }
+
+  const table = documentLines.slice(tableStart + 2);
+  const dependencies = new Map();
+  for (const row of table) {
+    if (!row.startsWith("|")) break;
+    const columns = row
+      .split("|")
+      .slice(1, -1)
+      .map((column) => column.trim().replaceAll("`", ""));
+    if (columns.length !== 2) {
+      throw new Error(
+        `Malformed domain dependency row in project_structure.md: ${row}`,
+      );
+    }
+    const [domainName, dependencyNames] = columns;
+    const domain = domainName === "Every other domain" ? "*" : domainName;
+    if (!domain || !dependencyNames || dependencies.has(domain)) {
+      throw new Error(`Invalid or duplicate domain dependency row: ${row}`);
+    }
+    const allowedDependencies =
+      dependencyNames === "None (foundation only)"
+        ? []
+        : dependencyNames
+            .split(", ")
+            .map((dependency) => dependency.replaceAll("`", ""));
+    dependencies.set(domain, allowedDependencies);
+  }
+
+  if (!dependencies.has("*")) {
+    throw new Error(
+      "project_structure.md must declare the default domain dependency row.",
+    );
+  }
+  const domains = readdirSync(domainRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  for (const domain of domains) {
+    if (!dependencies.has(domain) && !dependencies.has("*")) {
+      throw new Error(
+        `Domain '${domain}' is missing from the project_structure.md DAG.`,
+      );
+    }
+    for (const dependency of dependencies.get(domain) ??
+      dependencies.get("*")) {
+      if (!domains.includes(dependency)) {
+        throw new Error(
+          `Domain '${domain}' depends on unknown domain '${dependency}'.`,
+        );
+      }
+    }
+  }
+  for (const domain of dependencies.keys()) {
+    if (domain !== "*" && !domains.includes(domain)) {
+      throw new Error(
+        `Unknown domain '${domain}' is declared in project_structure.md.`,
+      );
+    }
+  }
+  return dependencies;
+}
+
+const domainDependencies = readDomainDependencies(structureDocument);
 
 function sourceModulePath(filename) {
   const normalized = filename.split(path.sep).join("/");
@@ -54,9 +126,30 @@ function sourceVisitor(check) {
     if (node.source && typeof node.source.value === "string")
       check(node, node.source.value);
   }
+
+  function inspectExport(node) {
+    if (node.source && typeof node.source.value === "string") {
+      check(node, node.source.value);
+    } else if (node.exportKind === "type" && node.declaration?.source) {
+      inspect(node.declaration);
+    }
+  }
   return {
     ImportDeclaration: inspect,
-    ExportNamedDeclaration: inspect,
+    ImportExpression(node) {
+      if (
+        node.source.type === "Literal" &&
+        typeof node.source.value === "string"
+      ) {
+        check(node, node.source.value);
+      } else if (
+        node.source.type === "TemplateLiteral" &&
+        node.source.expressions.length === 0
+      ) {
+        check(node, node.source.quasis[0]?.value.cooked ?? null);
+      }
+    },
+    ExportNamedDeclaration: inspectExport,
     ExportAllDeclaration: inspect,
   };
 }
@@ -88,7 +181,9 @@ const enforceLayerOrder = {
         if (target.type === "app" || target.type === "feature") {
           reason = "shared domains cannot depend on app or feature modules";
         } else if (target.type === "domain" && target.name !== importer.name) {
-          const allowedDependencies = domainDependencies[importer.name] ?? [];
+          const allowedDependencies =
+            domainDependencies.get(importer.name) ??
+            domainDependencies.get("*");
           if (!allowedDependencies.includes(target.name)) {
             reason = `domain dependency is not declared; allowed domains: ${allowedDependencies.join(", ") || "none"}`;
           }
@@ -194,7 +289,7 @@ const architecture = {
 
 const accessibilityRules = vuejsAccessibility.configs?.recommended?.rules ?? {};
 
-export default tseslint.config(
+export default defineConfig(
   { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
   {
     files: ["src/**/*.{ts,vue}"],
