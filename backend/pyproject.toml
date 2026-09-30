@@ -2,7 +2,14 @@
 name = "tekton-backend"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "alembic>=1.16,<2",
+    "anyio>=4.9,<5",
+    "fastapi>=0.116,<1",
+    "pydantic>=2.11,<3",
+    "sqlalchemy>=2.0,<3",
+    "uvicorn>=0.35,<1",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -19,6 +26,12 @@ ban-relative-imports = "all"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tekton"]
+
+[dependency-groups]
+test = ["httpx2>=2.13.1", "pytest>=9,<10"]
+
+[tool.uv]
+package = true
 
 [tool.basedpyright]
 typeCheckingMode = "strict"
@@ -361,3 +374,4 @@ name = "Only composition imports application commit"
 type = "forbidden"
 source_modules = ["tekton.application", "tekton.domain", "tekton.presentation", "tekton.infrastructure", "tekton.entrypoints"]
 forbidden_modules = ["tekton.application.commit"]
+allow_indirect_imports = true

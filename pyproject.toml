@@ -2,7 +2,7 @@
 members = ["backend", "edge", "conventions"]
 
 [dependency-groups]
-dev = ["basedpyright==1.40.1", "import-linter==2.13", "pytest==9.1.1", "pytest-xdist==3.8.0", "ruff==0.16.2", "tekton-conventions"]
+dev = ["basedpyright==1.40.1", "import-linter==2.13", "pytest==9.1.1", "pytest-xdist==3.8.0", "ruff==0.16.2", "tekton-conventions", "httpx2>=2.13.1"]
 
 [tool.uv.sources]
 tekton-conventions = { workspace = true }

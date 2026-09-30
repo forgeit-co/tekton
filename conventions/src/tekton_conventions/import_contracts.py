@@ -147,6 +147,7 @@ def contracts_from_specification(specification: str) -> list[dict[str, object]]:
                 "tekton.infrastructure",
                 "tekton.entrypoints",
             ],
+            "allow_indirect_imports": True,
             "forbidden_modules": ["tekton.application.commit"],
         }
     )

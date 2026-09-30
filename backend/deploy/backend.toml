@@ -1,0 +1,12 @@
+schema_version = 1
+
+[server]
+host = "127.0.0.1"
+port = 8000
+
+[database]
+path = "data/db/tekton.sqlite3"
+busy_timeout_ms = 5000
+foreign_keys = true
+synchronous = "NORMAL"
+journal_mode = "WAL"
