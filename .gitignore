@@ -4,5 +4,10 @@ backups/
 state/
 deploy/secrets/*
 !deploy/secrets/.gitkeep
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
 .claude/cycles/
 .claude/worktrees/

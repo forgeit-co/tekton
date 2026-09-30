@@ -1,0 +1,32 @@
+[tool.uv.workspace]
+members = ["backend", "edge", "conventions"]
+
+[dependency-groups]
+dev = ["basedpyright==1.40.1", "import-linter==2.13", "pytest==9.1.1", "pytest-xdist==3.8.0", "ruff==0.16.2", "tekton-conventions"]
+
+[tool.uv.sources]
+tekton-conventions = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PTH", "TID", "PLC0415"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
+include = [
+    "backend/src",
+    "backend/tests",
+    "backend/scripts",
+    "edge/src",
+    "edge/tests",
+    "conventions/src",
+    "conventions/tests",
+]
+failOnWarnings = true
+reportMissingTypeStubs = false
