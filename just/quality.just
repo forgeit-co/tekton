@@ -25,13 +25,12 @@ python-check:
   cd edge && uv run lint-imports
   cd edge && uv run pytest -n auto
 
-# Check frontend architecture, lint, types, formatting, tests and generated API types.
+# Check frontend architecture, lint, types, formatting and tests.
 frontend-check:
   cd frontend && pnpm lint
   cd frontend && pnpm typecheck
   cd frontend && pnpm format:check
   cd frontend && pnpm test
-  just api-types-check
 
 # Check secrets policy and workspace convention-gate coverage.
 repo-check:

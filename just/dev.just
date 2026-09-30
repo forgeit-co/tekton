@@ -5,6 +5,7 @@ test-all:
   just ci-install
   just python-check
   just frontend-check
+  just api-types-check
   just repo-check
   just commit-matcher-test
 
