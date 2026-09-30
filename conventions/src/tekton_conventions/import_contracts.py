@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 DOMAIN_LAYER_FORBIDDEN = (
     "tekton.application",
@@ -7,7 +8,22 @@ DOMAIN_LAYER_FORBIDDEN = (
     "tekton.composition",
     "tekton.entrypoints",
 )
+DOMAIN_MODULE_FORBIDDEN = (
+    "tekton.infrastructure",
+    "tekton.composition",
+    "tekton.entrypoints",
+)
+APPLICATION_LAYER_FORBIDDEN = (
+    "tekton.presentation",
+    "tekton.infrastructure",
+    "tekton.entrypoints",
+)
 FRAMEWORK_MODULES = ("fastapi", "sqlalchemy", "pydantic", "starlette", "httpx", "alembic")
+# Domainless application modules receive no business-domain capabilities.
+APPLICATION_SHARED_MODULES = ("shared", "eventlog.contracts")
+APPLICATION_MODULES = ("auth", "backup", "health", "settings", "eventlog")
+APPLICATION_COMMIT_MODULES = ("shared", "projections")
+APPLICATION_ONLY_MODULES = ("commit",)
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 SPECIFICATION_PATH = REPOSITORY_ROOT / "docs" / "technical-spec.md"
 BACKEND_MANIFEST_PATH = REPOSITORY_ROOT / "backend" / "pyproject.toml"
@@ -41,9 +57,19 @@ def domain_dependencies(specification: str) -> dict[str, tuple[str, ...]]:
     return dependencies_by_module
 
 
-def contracts_from_specification(specification: str) -> list[dict[str, str | list[str]]]:
+def contracts_from_specification(specification: str) -> list[dict[str, object]]:
     modules = domain_dependencies(specification)
-    contracts: list[dict[str, str | list[str]]] = [
+    application_modules = tuple(
+        dict.fromkeys(
+            (
+                *modules,
+                *APPLICATION_MODULES,
+                *APPLICATION_SHARED_MODULES,
+                *APPLICATION_ONLY_MODULES,
+            )
+        )
+    )
+    contracts: list[dict[str, object]] = [
         {
             "name": "Backend layers",
             "type": "layers",
@@ -67,7 +93,7 @@ def contracts_from_specification(specification: str) -> list[dict[str, str | lis
             for other_module in modules
             if other_module != module and other_module not in allowed_dependencies
         ]
-        forbidden_modules.extend(DOMAIN_LAYER_FORBIDDEN)
+        forbidden_modules.extend(DOMAIN_MODULE_FORBIDDEN)
         contracts.append(
             {
                 "name": f"Domain {module} follows its DAG row",
@@ -76,6 +102,53 @@ def contracts_from_specification(specification: str) -> list[dict[str, str | lis
                 "forbidden_modules": forbidden_modules,
             }
         )
+
+    for module in application_modules:
+        allowed_dependencies = modules.get(module, ())
+        if module == "commit":
+            allowed_dependencies = APPLICATION_COMMIT_MODULES
+        allowed_dependencies = (*allowed_dependencies, *APPLICATION_SHARED_MODULES)
+        forbidden_modules = [
+            f"tekton.application.{other_module}"
+            for other_module in application_modules
+            if other_module != module and other_module not in allowed_dependencies
+        ]
+        forbidden_domain_modules = (
+            set(modules) - set(modules.get(module, ())) if module in modules else set(modules)
+        )
+        forbidden_modules.extend(
+            f"tekton.domain.{domain_module}" for domain_module in sorted(forbidden_domain_modules)
+        )
+        forbidden_modules.extend(APPLICATION_LAYER_FORBIDDEN)
+        if module in APPLICATION_SHARED_MODULES:
+            forbidden_modules.extend(
+                f"tekton.application.{other_module}"
+                for other_module in APPLICATION_SHARED_MODULES
+                if other_module != module
+            )
+        contracts.append(
+            {
+                "name": f"Application {module} follows its DAG row",
+                "type": "forbidden",
+                "source_modules": [f"tekton.application.{module}"],
+                "forbidden_modules": forbidden_modules,
+            }
+        )
+
+    contracts.append(
+        {
+            "name": "Only composition imports application commit",
+            "type": "forbidden",
+            "source_modules": [
+                "tekton.application",
+                "tekton.domain",
+                "tekton.presentation",
+                "tekton.infrastructure",
+                "tekton.entrypoints",
+            ],
+            "forbidden_modules": ["tekton.application.commit"],
+        }
+    )
     return contracts
 
 
@@ -97,8 +170,17 @@ def render_contracts(specification: str) -> str:
         for key in ("layers", "source_modules", "forbidden_modules"):
             value = contract.get(key)
             if isinstance(value, list):
-                rendered = ", ".join(f'"{item}"' for item in value)
+                string_values = cast(list[str], value)
+                rendered = ", ".join(f'"{item}"' for item in string_values)
                 lines.append(f"{key} = [{rendered}]")
+        if contract.get("allow_indirect_imports") is True:
+            lines.append("allow_indirect_imports = true")
+        ignore_imports = contract.get("ignore_imports")
+        if isinstance(ignore_imports, list):
+            string_imports = cast(list[str], ignore_imports)
+            lines.append("ignore_imports = [")
+            lines.extend(f'    "{item}",' for item in string_imports)
+            lines.append("]")
         lines.append("")
     return "\n".join(lines)
 
