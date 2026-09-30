@@ -123,8 +123,20 @@ jobs:
       - name: Install Python workspace dependencies
         run: just python-install
 
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Activate pinned pnpm
+        run: corepack prepare pnpm@10.15.0 --activate
+
+      - name: Install frontend dependencies
+        run: just frontend-install
+
       - name: Check repository policy and convention gate coverage
         run: just repo-check
+
+      - name: Check API contract type drift
+        run: just contract-check
 
       - name: Check Claude commit matcher
         run: just commit-matcher-test

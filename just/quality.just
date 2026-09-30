@@ -48,8 +48,8 @@ commit-matcher-test:
 api-types:
   cd frontend && pnpm api-types
 
-# Check generated frontend API types are up to date.
-api-types-check:
+# Regenerate the OpenAPI client types and fail on any schema drift.
+contract-check:
   cd frontend && pnpm api-types:check
 
 # TODO: Validate public_knowledge/ once that directory is introduced.
