@@ -1,19 +1,13 @@
 # ── Test and development commands ────────────────────────────────────────────
 
-# Run all member and frontend tests with isolated pytest-xdist workers.
-test:
-  cd backend && uv run pytest -n auto
-  cd edge && uv run pytest -n auto
-  cd packages/tekton-conventions && uv run pytest -n auto
-  cd frontend && pnpm test
-
-# Run the single complete workspace CI suite.
+# Run the complete local CI suite through component and repository gates.
 test-all:
-  just lint
-  just python-arch
-  just frontend-arch
-  just test
-  just api-types-check
+  just ci-install
+  just python-check
+  just frontend-check
+  just contract-check
+  just repo-check
+  just commit-matcher-test
 
 # Run the API and Vite development server together.
 dev:

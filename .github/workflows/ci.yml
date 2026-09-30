@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: python checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pinned Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: 0.7.20
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            backend/pyproject.toml
+            edge/pyproject.toml
+            packages/*/pyproject.toml
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.46.0
+
+      - name: Install Python workspace dependencies
+        run: just python-install
+
+      - name: Run Python gates
+        run: just python-check
+
+  frontend:
+    name: frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Read pinned pnpm version
+        id: pnpm-version
+        run: echo "version=$(node -p 'require("./frontend/package.json").packageManager.split("@")[1]')" >> "$GITHUB_OUTPUT"
+
+      - name: Activate pinned pnpm
+        run: corepack prepare "pnpm@${{ steps.pnpm-version.outputs.version }}" --activate
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm --dir frontend store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.46.0
+
+      - name: Install frontend dependencies
+        run: just frontend-install
+
+      - name: Run frontend gates
+        run: just frontend-check
+
+  repository:
+    name: repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pinned Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: 0.7.20
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            backend/pyproject.toml
+            edge/pyproject.toml
+            packages/*/pyproject.toml
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.46.0
+
+      - name: Install Python workspace dependencies
+        run: just python-install
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Activate pinned pnpm
+        run: corepack prepare pnpm@10.15.0 --activate
+
+      - name: Install frontend dependencies
+        run: just frontend-install
+
+      - name: Check repository policy and convention gate coverage
+        run: just repo-check
+
+      - name: Check API contract type drift
+        run: just contract-check
+
+      - name: Check Claude commit matcher
+        run: just commit-matcher-test
