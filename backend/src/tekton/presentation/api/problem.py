@@ -7,6 +7,20 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
+HTTP_ERROR_CODES = {
+    400: "validation.failed",
+    401: "auth.required",
+    403: "forbidden",
+    404: "not_found",
+    405: "method.not_allowed",
+    409: "conflict",
+    413: "request.too_large",
+    415: "media_type.unsupported",
+    422: "validation.failed",
+    428: "precondition.required",
+    500: "internal",
+    503: "service.unavailable",
+}
 
 
 def install_problem_handlers(app: FastAPI) -> None:
@@ -26,9 +40,10 @@ def install_problem_handlers(app: FastAPI) -> None:
     async def handle_http_error(
         request: Request, exception: StarletteHTTPException
     ) -> JSONResponse:
+        code = HTTP_ERROR_CODES.get(exception.status_code, "http.error")
         return _problem_response(
             status=exception.status_code,
-            code="not_found" if exception.status_code == 404 else "http.error",
+            code=code,
             title="Request failed",
             detail=str(exception.detail),
         )

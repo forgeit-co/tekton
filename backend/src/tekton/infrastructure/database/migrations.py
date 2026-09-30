@@ -4,7 +4,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 
 from tekton.infrastructure.config.document import DatabaseSettings
 from tekton.infrastructure.database.sqlite import create_sqlite_engine
@@ -21,6 +21,10 @@ class SchemaMismatchError(RuntimeError):
         )
         self.current_revision = current_revision
         self.head_revision = head_revision
+
+
+class MigrationIntegrityError(RuntimeError):
+    pass
 
 
 def migration_config() -> Config:
@@ -40,13 +44,32 @@ def current_schema_revision(engine: Engine) -> str | None:
 
 def run_migrations(database_settings: DatabaseSettings) -> None:
     database_path = Path(database_settings.path)
-    sqlite_settings = database_settings.sqlite
-    engine = create_sqlite_engine(database_path, sqlite_settings)
+    engine = create_sqlite_engine(database_path, database_settings.sqlite)
     try:
-        configuration = migration_config()
-        with engine.begin() as connection:
-            configuration.attributes["connection"] = connection
-            command.upgrade(configuration, "head")
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            transaction = connection.get_transaction()
+            if transaction is None:
+                raise RuntimeError("Migration transaction did not start")
+            try:
+                configuration = migration_config()
+                configuration.attributes["connection"] = connection
+                command.upgrade(configuration, "head")
+                violations = connection.execute(text("PRAGMA foreign_key_check")).all()
+                if violations:
+                    raise MigrationIntegrityError(
+                        f"foreign_key_check found {len(violations)} violation(s)"
+                    )
+                transaction.commit()
+            except Exception:
+                transaction.rollback()
+                raise
+            finally:
+                connection.rollback()
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                connection.commit()
     finally:
         engine.dispose()
 

@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 
 from tekton.composition.api import create_api_app
 from tekton.infrastructure.config.bootstrap import RuntimeConfiguration
@@ -24,7 +25,7 @@ def migrated_database(tmp_path: Path) -> Iterator[Path]:
 
 
 @pytest.fixture
-def api_client(migrated_database: Path) -> Iterator[ApiClient]:
+def api_app(migrated_database: Path) -> FastAPI:
     configuration = RuntimeConfiguration(
         document=ConfigurationDocument(
             schema_version=1,
@@ -33,6 +34,10 @@ def api_client(migrated_database: Path) -> Iterator[ApiClient]:
         ),
         secrets=SecretInput(secrets={}),
     )
-    app = create_api_app(configuration=configuration)
-    with ApiClient(app) as client:
+    return create_api_app(configuration=configuration)
+
+
+@pytest.fixture
+def api_client(api_app: FastAPI) -> Iterator[ApiClient]:
+    with ApiClient(api_app) as client:
         yield client

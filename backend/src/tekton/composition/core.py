@@ -28,12 +28,16 @@ def compose_core(configuration: RuntimeConfiguration) -> CoreServices:
     run_all_mappers()
     database_settings = configuration.document.database
     engine = create_sqlite_engine(Path(database_settings.path), database_settings.sqlite)
-    revision = require_current_schema(engine)
-    session_factory = create_session_factory(engine)
-    return CoreServices(
-        engine=engine,
-        session_factory=session_factory,
-        unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(session_factory),
-        committer=CommitPipeline(),
-        health_check=HealthCheck(SqliteHealthReader(engine, revision)),
-    )
+    try:
+        revision = require_current_schema(engine)
+        session_factory = create_session_factory(engine)
+        return CoreServices(
+            engine=engine,
+            session_factory=session_factory,
+            unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(session_factory),
+            committer=CommitPipeline(),
+            health_check=HealthCheck(SqliteHealthReader(engine, revision)),
+        )
+    except Exception:
+        engine.dispose()
+        raise

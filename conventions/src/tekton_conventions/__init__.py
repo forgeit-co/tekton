@@ -1,5 +1,5 @@
 from tekton_conventions._machinery import Rule, Violation, package_root
-from tekton_conventions.configuration import application_and_domain_do_not_read_environment
+from tekton_conventions.configuration import backend_environment_reads_are_confined
 from tekton_conventions.import_contracts import (
     contracts_from_specification,
     domain_dependencies,
@@ -14,7 +14,7 @@ from tekton_conventions.workspace import members_carry_convention_gates
 
 __all__ = [
     "Rule",
-    "application_and_domain_do_not_read_environment",
+    "backend_environment_reads_are_confined",
     "Violation",
     "contracts_from_specification",
     "domain_dependencies",

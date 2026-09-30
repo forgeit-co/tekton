@@ -32,6 +32,9 @@ class DatabaseSettings:
             journal_mode=self.journal_mode,
         )
 
+    def with_path(self, path: Path) -> DatabaseSettings:
+        return dataclasses.replace(self, path=str(path))
+
 
 @dataclass(frozen=True, slots=True)
 class ConfigurationDocument:
@@ -57,6 +60,9 @@ class ConfigurationDocument:
         server = _section_settings(document, "server", ServerSettings)
         database = _section_settings(document, "database", DatabaseSettings)
         return cls(schema_version=schema_version, server=server, database=database)
+
+    def with_database_path(self, path: Path) -> ConfigurationDocument:
+        return dataclasses.replace(self, database=self.database.with_path(path))
 
 
 def _section_settings[SettingsType](

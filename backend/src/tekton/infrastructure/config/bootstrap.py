@@ -16,12 +16,13 @@ class BootstrapInputs:
     secrets_directory: Path
 
     @classmethod
-    def from_environment(cls, environment: Mapping[str, str] = os.environ) -> BootstrapInputs:
+    def from_environment(cls, environment: Mapping[str, str] | None = None) -> BootstrapInputs:
+        environment_values = os.environ if environment is None else environment
         configuration_path = Path(
-            environment.get("TEKTON_CONFIGURATION_PATH", DEFAULT_CONFIGURATION_PATH)
+            environment_values.get("TEKTON_CONFIGURATION_PATH", DEFAULT_CONFIGURATION_PATH)
         )
         secrets_directory = Path(
-            environment.get("TEKTON_SECRETS_DIRECTORY", DEFAULT_SECRETS_DIRECTORY)
+            environment_values.get("TEKTON_SECRETS_DIRECTORY", DEFAULT_SECRETS_DIRECTORY)
         )
         return cls(configuration_path=configuration_path, secrets_directory=secrets_directory)
 

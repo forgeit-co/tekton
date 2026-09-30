@@ -1,5 +1,5 @@
 from tekton_conventions import (
-    application_and_domain_do_not_read_environment,
+    backend_environment_reads_are_confined,
     contracts_from_specification,
     module_filenames_follow_canonical_pattern,
     modules_contain_only_tests,
@@ -23,8 +23,8 @@ def test_import_contracts_allow_indirect_composition_wiring():
     )
 
 
-def test_application_and_domain_do_not_read_process_environment():
-    application_and_domain_do_not_read_environment().enforce(package_root(__file__))
+def test_backend_environment_reads_are_confined_to_bootstrap():
+    backend_environment_reads_are_confined().enforce(package_root(__file__))
 
 
 def test_test_modules_contain_only_tests():
