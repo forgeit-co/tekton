@@ -2,6 +2,8 @@ data/
 s3/
 backups/
 state/
+docs/scratches/
+docs/superpowers/
 deploy/.env
 deploy/secrets/
 !deploy/secrets/.gitkeep
