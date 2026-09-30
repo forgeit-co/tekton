@@ -4,3 +4,5 @@ backups/
 state/
 deploy/secrets/*
 !deploy/secrets/.gitkeep
+.claude/cycles/
+.claude/worktrees/
