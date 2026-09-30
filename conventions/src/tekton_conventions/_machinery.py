@@ -15,7 +15,7 @@ class Rule:
     description: str
     check: Callable[[Path], list[Violation]]
 
-    def enforce(self, root: Path) -> None:
+    def enforce(self, root: Path):
         violations = self.check(root)
         if violations:
             details = "\n".join(

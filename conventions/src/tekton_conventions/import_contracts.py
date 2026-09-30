@@ -103,7 +103,7 @@ def render_contracts(specification: str) -> str:
     return "\n".join(lines)
 
 
-def update_backend_manifest() -> None:
+def update_backend_manifest():
     manifest = BACKEND_MANIFEST_PATH.read_text(encoding="utf-8")
     marker = "[tool.importlinter]"
     if marker not in manifest:

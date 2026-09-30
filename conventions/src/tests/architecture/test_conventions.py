@@ -7,17 +7,17 @@ from tekton_conventions import (
 )
 
 
-def test_test_modules_contain_only_tests() -> None:
+def test_test_modules_contain_only_tests():
     modules_contain_only_tests().enforce(package_root(__file__))
 
 
-def test_test_module_filenames_follow_canonical_pattern() -> None:
+def test_test_module_filenames_follow_canonical_pattern():
     module_filenames_follow_canonical_pattern().enforce(package_root(__file__))
 
 
-def test_pytest_references_use_canonical_names() -> None:
+def test_pytest_references_use_canonical_names():
     pytest_references_use_canonical_names().enforce(package_root(__file__))
 
 
-def test_every_workspace_member_has_a_convention_gate() -> None:
+def test_every_workspace_member_has_a_convention_gate():
     members_carry_convention_gates().enforce(package_root(__file__))
