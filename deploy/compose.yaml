@@ -190,7 +190,6 @@ services:
       backend-api:
         condition: service_healthy
     networks:
-      - edge
       - public
     security_opt:
       - no-new-privileges:true
@@ -216,7 +215,7 @@ services:
 
 networks:
   edge:
-    driver: bridge
+    internal: true
   public:
     driver: bridge
   control:
