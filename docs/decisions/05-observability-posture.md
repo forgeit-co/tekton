@@ -9,7 +9,7 @@ Tekton is a local Compose application with a Python backend and worker. The tech
 
 ## Decision
 
-Backend services emit structured JSON logs to stdout. Log event codes and their meanings follow the vocabulary in [`docs/technical-spec.md`](../technical-spec.md) §18; adding or changing a code updates that specification as part of the same change. Logs carry the specified non-secret context fields, never request or agent payloads, tokens, credentials, or personal data. The container engine and local operator tooling collect and read stdout; the application does not ship or aggregate logs.
+Adopt structured JSON logs to stdout with the named event-code vocabulary defined in [`docs/technical-spec.md`](../technical-spec.md) §18 as the target observability contract. The implementation is pending for M0a; the current scaffold does not yet emit structured JSON logs or these codes. When implemented, logs carry the specified non-secret context fields, never request or agent payloads, tokens, credentials, or personal data. The container engine and local operator tooling collect and read stdout; the application does not ship or aggregate logs.
 
 The §18 log-code vocabulary is the stable operational contract. Durable database state remains the source for correctness and audit questions. A metrics endpoint, exporter, collector, tracing stack, or app-side telemetry store is not adopted without demonstrated need and an explicit deployment decision.
 

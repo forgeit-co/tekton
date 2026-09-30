@@ -11,7 +11,9 @@ The product is explicitly local-only on one operator's Linux workstation. The te
 
 The run queue is the durable `runs` table in the local SQLite database. No separate message broker is deployed for the local-only product. The worker claims queued rows with leases, performs work, and records run state and outcomes through the backend's defined application/database boundaries. This is an execution queue, not a license for arbitrary fire-and-forget work in API request handlers.
 
-Worker identity is the local deployment's process identity, not a remotely enrolled fleet identity. There is one local operator-controlled stack; no worker CA, enrollment ceremony, or per-replica provisioning is introduced. The worker writes `worker_heartbeat` every 15 seconds; the health surface reports it stale after two minutes, as specified in technical-spec §7.2 and §18.
+**Implementation status:** the SQLite-backed queue and claim logic are planned for M0a/M1, per technical-spec §§19–20; they are not present in the current scaffold.
+
+Worker identity is the local deployment's process identity, not a remotely enrolled fleet identity. There is one local operator-controlled stack; no worker CA, enrollment ceremony, or per-replica provisioning is introduced. Today, the worker writes an ephemeral heartbeat file at `/tmp/tekton-worker-heartbeat`, which the Compose healthcheck checks. The specification's durable `worker_heartbeat` row and health-page stale report are planned, not yet implemented.
 
 ## Consequences
 

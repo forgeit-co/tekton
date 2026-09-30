@@ -4,7 +4,7 @@ An open-source assistant that runs locally on Linux and guides an owner through 
 
 ## Quick start
 
-Prerequisites: Linux, Docker Compose, `just`, `uv`, Node.js 24 with pnpm 10. From the repository root, start the local stack with:
+Prerequisites: Linux, Docker Compose or Podman (rootless Podman is the reference; the engine choice is pending, see [ADR 12](docs/decisions/12-container-engine-posture.md)), `just`, `uv`, Node.js 24 with pnpm 10. From the repository root, start the local stack with:
 
 ```sh
 just up
