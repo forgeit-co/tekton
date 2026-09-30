@@ -3,53 +3,53 @@ from pathlib import Path
 
 from tekton_conventions import contracts_from_specification, domain_dependencies
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-EXPECTED_DOMAIN_MODULES = {
-    "workflow",
-    "projections",
-    "decisions",
-    "proposals",
-    "eligibility",
-    "plots",
-    "localities",
-    "budget",
-    "fx",
-    "tasks",
-    "approvals",
-    "privacy",
-    "documents",
-    "sources",
-    "runs",
-    "sessions",
-    "metering",
-    "mail",
-    "knowledge",
-    "deadlines",
-    "scheduling",
-    "notifications",
-}
-
 
 def test_every_domain_package_has_a_specification_dag_row():
-    specification = (REPOSITORY_ROOT / "docs/technical-spec.md").read_text(encoding="utf-8")
+    repository_root = Path(__file__).resolve().parents[4]
+    expected_domain_modules = {
+        "workflow",
+        "projections",
+        "decisions",
+        "proposals",
+        "eligibility",
+        "plots",
+        "localities",
+        "budget",
+        "fx",
+        "tasks",
+        "approvals",
+        "privacy",
+        "documents",
+        "sources",
+        "runs",
+        "sessions",
+        "metering",
+        "mail",
+        "knowledge",
+        "deadlines",
+        "scheduling",
+        "notifications",
+    }
+    specification = (repository_root / "docs/technical-spec.md").read_text(encoding="utf-8")
     dag_modules = set(domain_dependencies(specification))
 
     package_modules = {
         package.name
-        for package in (REPOSITORY_ROOT / "backend/src/tekton/domain").iterdir()
+        for package in (repository_root / "backend/src/tekton/domain").iterdir()
         if package.is_dir()
     }
-    assert package_modules == dag_modules & EXPECTED_DOMAIN_MODULES, (
+    assert package_modules == dag_modules & expected_domain_modules, (
         f"Domain package/DAG mismatch: packages={package_modules}, DAG={dag_modules}"
     )
 
 
 def test_generated_import_contracts_match_backend_manifest():
+    repository_root = Path(__file__).resolve().parents[4]
     backend_manifest = tomllib.loads(
-        (REPOSITORY_ROOT / "backend/pyproject.toml").read_text(encoding="utf-8")
+        (repository_root / "backend/pyproject.toml").read_text(encoding="utf-8")
     )
     committed_contracts = backend_manifest["tool"]["importlinter"]["contracts"]
-    specification = (REPOSITORY_ROOT / "docs/technical-spec.md").read_text(encoding="utf-8")
+    specification = (repository_root / "docs/technical-spec.md").read_text(encoding="utf-8")
     generated_contracts = contracts_from_specification(specification)
     assert committed_contracts == generated_contracts, (
         "Generated import contracts differ from backend/pyproject.toml"
@@ -90,6 +90,7 @@ def test_generated_import_contracts_match_backend_manifest():
             "tekton.application.auth",
             "tekton.application.eventlog",
             "tekton.domain.decisions",
+            "tekton.composition",
         }
         <= set(contract["forbidden_modules"])
         for contract in committed_contracts

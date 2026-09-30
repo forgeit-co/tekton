@@ -16,6 +16,7 @@ DOMAIN_MODULE_FORBIDDEN = (
 APPLICATION_LAYER_FORBIDDEN = (
     "tekton.presentation",
     "tekton.infrastructure",
+    "tekton.composition",
     "tekton.entrypoints",
 )
 FRAMEWORK_MODULES = ("fastapi", "sqlalchemy", "pydantic", "starlette", "httpx", "alembic")

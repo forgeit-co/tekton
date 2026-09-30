@@ -1,15 +1,13 @@
 import ast
 from pathlib import Path
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
-APPLICATION_ROOT = REPOSITORY_ROOT / "backend/src/tekton/application"
-ALLOWED_COMMIT_DIRECTORY = APPLICATION_ROOT / "commit"
-
 
 def test_application_outside_commit_pipeline_never_calls_commit():
+    application_root = Path(__file__).resolve().parents[4] / "backend/src/tekton/application"
+    allowed_commit_directory = application_root / "commit"
     violations: list[str] = []
-    for source_path in APPLICATION_ROOT.rglob("*.py"):
-        if source_path.is_relative_to(ALLOWED_COMMIT_DIRECTORY):
+    for source_path in application_root.rglob("*.py"):
+        if source_path.is_relative_to(allowed_commit_directory):
             continue
         module = ast.parse(source_path.read_text(encoding="utf-8"))
         for node in ast.walk(module):
