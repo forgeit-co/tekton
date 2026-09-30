@@ -78,7 +78,7 @@ services:
     cap_drop: [ALL]
     read_only: true
     pids_limit: 64
-    mem_limit: 256m
+    mem_limit: 512m
     cpus: 0.5
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m,mode=1777
@@ -144,7 +144,6 @@ services:
     networks:
       - edge
       - data
-      - public
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=2)"]
       interval: 10s
@@ -169,11 +168,19 @@ services:
       - ../data/db:/app/data/db
       - ../data/secrets:/app/data/secrets:ro
       - ../backend/deploy/backend.toml:/app/deploy/backend.toml:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777,uid=${TEKTON_UID:-10001},gid=${TEKTON_GID:-10001}
     depends_on:
       migrate:
         condition: service_completed_successfully
     networks:
       - data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib,time; path=pathlib.Path('/tmp/tekton-worker-heartbeat'); assert path.is_file() and time.time()-float(path.read_text()) <= 120"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
 
   frontend:
     build:
@@ -190,7 +197,7 @@ services:
       backend-api:
         condition: service_healthy
     networks:
-      - public
+      - edge
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -215,9 +222,6 @@ services:
 
 networks:
   edge:
-    internal: true
-  public:
-    driver: bridge
   control:
     internal: true
   data:

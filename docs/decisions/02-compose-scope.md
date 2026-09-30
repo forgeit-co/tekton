@@ -14,5 +14,6 @@ The default Compose stack implements `s3`, `s3-init`, `migrate`, `backend-api`, 
 ## Consequences
 
 - `just up` can run the current scaffold without exposing services that do not have an implementation yet.
+- The `edge` network remains externally routed so Docker can publish the frontend port; the API is attached to both `edge` and internal `data`, while the frontend is attached only to `edge`.
 - The `control`, `extract`, `internet`, and `gateway` network definitions are present for the later service groups; they are unused by current services.
 - The worker entrypoint remains an idle lifecycle placeholder until its queue and job consumers arrive.
