@@ -5,7 +5,7 @@ import HomePage from "@/features/home/HomePage.vue";
 import { i18n } from "@/shared/foundation/i18n";
 
 describe("HomePage", () => {
-  it("shows the localized home heading", () => {
+  it("shows the localized heading and health served by the default handler", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -19,6 +19,9 @@ describe("HomePage", () => {
       screen.getByRole("heading", {
         name: "Build your home, one step at a time",
       }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("All systems operational"),
     ).toBeInTheDocument();
   });
 });
