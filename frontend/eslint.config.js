@@ -293,6 +293,10 @@ const architecture = {
   },
 };
 
+export const customArchitectureRuleIds = Object.keys(architecture.rules).map(
+  (ruleName) => `architecture/${ruleName}`,
+);
+
 const accessibilityRules = vuejsAccessibility.configs?.recommended?.rules ?? {};
 
 export default defineConfig(

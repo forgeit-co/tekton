@@ -11,7 +11,7 @@ Tekton has a local production-like Compose deployment started by `just local-dep
 
 Create a dedicated backend deployment-check category as a sibling of `backend/tests/`, outside pytest's `testpaths`. Its first member is a deployment smoke check that observes the existing local stack after `just local-deploy-up`: the backend live-health endpoint responds after migrations have completed, and the frontend's published root responds. The check reads the operator-provisioned deployment; it does not provision or tear it down, mount helpers from backend test support, or run in `just test-all`.
 
-The check belongs to the local deployment command family under the name `local-backend-deploy-check`, with its precondition documented as the completed `just local-deploy-up` stack. It runs serially with pytest xdist disabled and visible output. The check implementation and recipe are intentionally not added in this documentation-only cycle; they must land together before this ADR can be treated as implemented.
+The check belongs to the local deployment command family under the name `local-backend-deploy-check`, with its precondition documented as the completed `just local-deploy-up` stack. It runs serially with pytest xdist disabled and visible output. The Python deployment-check root is `backend/deployment_checks/`, outside the `testpaths` rooted at `backend/tests/`. Its smoke check polls live health for up to 60 seconds, verifies the published frontend root and JSON health endpoint, and reports failures with endpoint context. The recipe reads the host port from `deploy/.env`; it neither starts nor stops the stack and is absent from `just test-all` and CI.
 
 ## Consequences
 
