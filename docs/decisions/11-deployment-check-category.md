@@ -1,6 +1,6 @@
 # ADR 11: Deployment-check category and first member
 
-**Status:** Accepted
+**Status:** Accepted — implemented
 **Date:** 2026-09-30
 
 ## Context
