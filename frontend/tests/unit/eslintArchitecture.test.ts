@@ -31,6 +31,19 @@ describe("architecture dependency rule", () => {
     );
   });
 
+  it("rejects cross-feature TypeScript import types", async () => {
+    const diagnostics = await lintSource(
+      'type Plot = import("@/features/plots/types").Plot',
+      path.join(frontendRoot, "src/features/home/plotType.ts"),
+    );
+
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics[1]?.ruleId).toBe("architecture/enforce-layer-order");
+    expect(diagnostics[1]?.message).toContain(
+      "features may depend on shared modules",
+    );
+  });
+
   it("enforces the domain dependency DAG declared in the structure document", async () => {
     const allowedDependency = await lintSource(
       "export type { ValueType } from '@/shared/domains/value-types'",

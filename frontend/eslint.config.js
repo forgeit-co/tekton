@@ -136,6 +136,12 @@ function sourceVisitor(check) {
   }
   return {
     ImportDeclaration: inspect,
+    TSImportType(node) {
+      const importSource = node.source?.value;
+      if (typeof importSource === "string") {
+        check(node, importSource);
+      }
+    },
     ImportExpression(node) {
       if (
         node.source.type === "Literal" &&
