@@ -1,3 +1,9 @@
 {
-  "ui.home.title": "Build your home, one step at a time"
+  "ui.home.title": "Build your home, one step at a time",
+  "ui.health.eyebrow": "System status",
+  "ui.health.title": "Service health",
+  "ui.health.loading": "Checking service…",
+  "ui.health.ok": "All systems operational",
+  "ui.health.error": "Service health could not be confirmed",
+  "ui.health.retry": "Try again"
 }

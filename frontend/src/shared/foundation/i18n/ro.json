@@ -1,3 +1,9 @@
 {
-  "ui.home.title": "Construiește-ți casa, pas cu pas"
+  "ui.home.title": "Construiește-ți casa, pas cu pas",
+  "ui.health.eyebrow": "Starea sistemului",
+  "ui.health.title": "Sănătatea serviciului",
+  "ui.health.loading": "Se verifică serviciul…",
+  "ui.health.ok": "Toate sistemele funcționează",
+  "ui.health.error": "Starea serviciului nu a putut fi confirmată",
+  "ui.health.retry": "Încearcă din nou"
 }
