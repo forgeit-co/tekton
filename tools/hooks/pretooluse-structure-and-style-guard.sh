@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
 # Blocks commits touching source until the language structure/style guard has run.
-# Bypass: STRUCTURE_STYLE_GUARD_OK=1 before git commit.
 
-HOOK_DIR=$(CDPATH='' cd -- "$(dirname -- "${0}")" && pwd)
-source "${HOOK_DIR}/pretooluse-common.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/pretooluse-common.sh"
 
 RUST_SOURCE_RE='\.rs$'
 WEB_SOURCE_RE='^frontend/src/'
@@ -13,7 +11,6 @@ WEB_FRAMEWORK='vue'
 PYTHON_SOURCE_RE='\.py$'
 
 require_git_commit_command
-bypassed STRUCTURE_STYLE_GUARD_OK && exit 0
 
 ALL_CHANGED=$(git status --porcelain --untracked-files=all 2> /dev/null | grep -v '^!!' | cut -c4-)
 [ -z "${ALL_CHANGED}" ] && exit 0

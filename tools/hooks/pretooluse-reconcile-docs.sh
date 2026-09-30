@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
 # Blocks commits that change code without documentation.
-# Bypass: RECONCILE_DOCS_OK=1 before git commit.
 
-HOOK_DIR=$(CDPATH='' cd -- "$(dirname -- "${0}")" && pwd)
-source "${HOOK_DIR}/pretooluse-common.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/pretooluse-common.sh"
 
 require_git_commit_command
-bypassed RECONCILE_DOCS_OK && exit 0
 
-CHECK_SCRIPT="${HOOK_DIR}/reconcile-docs-check.sh"
-[ -x "${CHECK_SCRIPT}" ] || exit 0
+CHECK_SCRIPT="$(dirname -- "${BASH_SOURCE[0]}")/reconcile-docs-check.sh"
+[ -x "${CHECK_SCRIPT}" ] || {
+  echo "Commit guard blocked: reconcile-docs check script is missing." >&2
+  exit 2
+}
 
 CODE_FILES=$("${CHECK_SCRIPT}" --working-tree)
 CHECK_STATUS=$?

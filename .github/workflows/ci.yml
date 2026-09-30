@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
-    name: test all
+  python:
+    name: python checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -37,12 +37,30 @@ jobs:
             edge/pyproject.toml
             packages/*/pyproject.toml
 
-      - name: Install pinned Node.js
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.46.0
+
+      - name: Install Python workspace dependencies
+        run: just python-install
+
+      - name: Run Python gates
+        run: just python-check
+
+  frontend:
+    name: frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Node.js 24
         uses: actions/setup-node@v7
         with:
           node-version: 24
 
-      - name: Enable pnpm with Corepack
+      - name: Enable Corepack
         run: corepack enable
 
       - name: Read pinned pnpm version
@@ -67,5 +85,46 @@ jobs:
         with:
           tool: just@1.46.0
 
-      - name: Run full CI suite through task runner
-        run: just test-all
+      - name: Install frontend dependencies
+        run: just frontend-install
+
+      - name: Run frontend gates
+        run: just frontend-check
+
+  repository:
+    name: repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pinned Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: 0.7.20
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+            backend/pyproject.toml
+            edge/pyproject.toml
+            packages/*/pyproject.toml
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just@1.46.0
+
+      - name: Install Python workspace dependencies
+        run: just python-install
+
+      - name: Check repository policy and convention gate coverage
+        run: just repo-check
+
+      - name: Check Claude commit matcher
+        run: just commit-matcher-test

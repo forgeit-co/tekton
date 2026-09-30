@@ -2,10 +2,11 @@
 
 # Blocks commits that add tracked secrets or private keys.
 
-HOOK_DIR=$(CDPATH='' cd -- "$(dirname -- "${0}")" && pwd)
-source "${HOOK_DIR}/pretooluse-common.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/pretooluse-common.sh"
 
 require_git_commit_command
 
-command -v just > /dev/null 2>&1 || exit 0
-just secrets-check
+if ! just secrets-check; then
+  echo "Commit guard blocked: secrets-check failed." >&2
+  exit 2
+fi
