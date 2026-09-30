@@ -29,7 +29,8 @@ init:
 # Start the implemented local services in dependency order.
 up:
   just init
-  docker compose -f deploy/compose.yaml up --build -d
+  docker compose -f deploy/compose.yaml build
+  docker compose -f deploy/compose.yaml up -d
 
 # Stop the local stack without deleting operator data.
 down:

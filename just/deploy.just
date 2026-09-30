@@ -14,4 +14,4 @@ prod-backend-build:
 
 # Build the production frontend image.
 prod-frontend-build:
-  docker build -f images/frontend/Dockerfile -t tekton-frontend:local frontend
+  docker build -f images/frontend/Dockerfile -t tekton-frontend:local .
