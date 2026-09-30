@@ -10,7 +10,7 @@ from tekton_conventions import (
 
 
 def test_import_contracts_allow_indirect_composition_wiring():
-    repository_root = package_root(__file__).parent.parent.parent.parent
+    repository_root = package_root(__file__).parent
     specification_path = repository_root / "docs/technical-spec.md"
     contracts = contracts_from_specification(specification_path.read_text(encoding="utf-8"))
     commit_contract = next(
