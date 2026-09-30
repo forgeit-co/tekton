@@ -9,11 +9,13 @@ test:
 
 # Run the single complete workspace CI suite.
 test-all:
+  just ci-install
   just lint
   just python-arch
   just frontend-arch
   just test
   just api-types-check
+  just secrets-check
 
 # Run the API and Vite development server together.
 dev:

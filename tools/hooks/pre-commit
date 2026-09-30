@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+# Warning-only echo for commits made outside Claude Code.
+
+HOOK_DIR=$(CDPATH='' cd -- "$(dirname -- "${0}")" && pwd)
+CHECK_SCRIPT="${HOOK_DIR}/reconcile-docs-check.sh"
+
+if git diff --cached --name-only | grep -qE '\.py$|^frontend/'; then
+  printf '\nWarning: staged Python/frontend changes — run ruff format and Prettier before committing.\n' >&2
+fi
+
+[ -x "${CHECK_SCRIPT}" ] || exit 0
+
+CODE_FILES=$("${CHECK_SCRIPT}" --staged)
+CHECK_STATUS=$?
+[ "${CHECK_STATUS}" -eq 3 ] || exit 0
+
+{
+  printf '\nWarning: staged code changes with no documentation changes:\n'
+  printf '%s\n' "${CODE_FILES}" | sed 's/^/  /'
+  printf 'Consider running the reconcile-docs skill. This warning does not block the commit.\n\n'
+} >&2
+
+exit 0
