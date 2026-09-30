@@ -5,8 +5,22 @@ import pytest
 from tekton_conventions import (
     module_filenames_follow_canonical_pattern,
     modules_contain_only_tests,
+    no_tests_under_src,
     pytest_references_use_canonical_names,
 )
+
+
+def test_no_tests_under_src_flags_tests_directory():
+    fixture_root = Path(__file__).parent / "fixtures/no_tests_under_src/should_flag"
+
+    with pytest.raises(AssertionError, match="Move tests outside src/"):
+        no_tests_under_src().enforce(fixture_root)
+
+
+def test_no_tests_under_src_accepts_src_without_tests_directory():
+    fixture_root = Path(__file__).parent / "fixtures/no_tests_under_src/should_pass"
+
+    no_tests_under_src().enforce(fixture_root)
 
 
 def test_modules_contain_only_tests_flags_module_helper(tmp_path: Path):

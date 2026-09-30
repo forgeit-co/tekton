@@ -17,7 +17,7 @@ dev = [
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-xdist", specifier = "==3.8.0" },
     { name = "ruff", specifier = "==0.16.2" },
-    { name = "tekton-conventions", editable = "conventions" },
+    { name = "tekton-conventions", editable = "packages/tekton-conventions" },
 ]
 
 [[package]]
@@ -594,7 +594,7 @@ test = [
 [[package]]
 name = "tekton-conventions"
 version = "0.1.0"
-source = { editable = "conventions" }
+source = { editable = "packages/tekton-conventions" }
 
 [package.dev-dependencies]
 dev = [
@@ -604,7 +604,7 @@ dev = [
 [package.metadata]
 
 [package.metadata.requires-dev]
-dev = [{ name = "tekton-conventions", editable = "conventions" }]
+dev = [{ name = "tekton-conventions", editable = "packages/tekton-conventions" }]
 
 [[package]]
 name = "tekton-edge"

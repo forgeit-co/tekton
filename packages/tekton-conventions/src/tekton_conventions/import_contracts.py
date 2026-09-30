@@ -25,7 +25,7 @@ APPLICATION_SHARED_MODULES = ("shared", "eventlog.contracts")
 APPLICATION_MODULES = ("auth", "backup", "health", "settings", "eventlog")
 APPLICATION_COMMIT_MODULES = ("shared", "projections")
 APPLICATION_ONLY_MODULES = ("commit",)
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 SPECIFICATION_PATH = REPOSITORY_ROOT / "docs" / "technical-spec.md"
 BACKEND_MANIFEST_PATH = REPOSITORY_ROOT / "backend" / "pyproject.toml"
 

@@ -24,7 +24,7 @@ failOnWarnings = true
 reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "src/tests"]
+testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tekton_edge"]

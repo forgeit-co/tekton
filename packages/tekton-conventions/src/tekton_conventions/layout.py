@@ -15,6 +15,10 @@ def modules_contain_only_tests() -> Rule:
     )
 
 
+def no_tests_under_src() -> Rule:
+    return Rule("Source trees do not contain tests directories", _check_no_tests_under_src)
+
+
 def module_filenames_follow_canonical_pattern() -> Rule:
     return Rule(
         "Test modules use the canonical test_*.py filename pattern",
@@ -27,6 +31,18 @@ def pytest_references_use_canonical_names() -> Rule:
         "Pytest modules are imported without aliases",
         _check_pytest_imports,
     )
+
+
+def _check_no_tests_under_src(root: Path) -> list[Violation]:
+    source_directory = root / "src"
+    if not source_directory.is_dir():
+        raise RuntimeError(f"{root} has no src/ directory")
+
+    return [
+        Violation(tests_directory, "Move tests outside src/")
+        for tests_directory in sorted(source_directory.rglob("tests"))
+        if tests_directory.is_dir()
+    ]
 
 
 def _test_modules(root: Path) -> list[Path]:

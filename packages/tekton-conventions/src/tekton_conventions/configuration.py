@@ -20,9 +20,7 @@ def _check_backend_environment_reads(root: Path) -> list[Violation]:
     for source_path in sorted(package_directory.rglob("*.py")):
         relative_path = source_path.relative_to(package_directory)
         is_configuration_module = relative_path.parts[:2] == ("infrastructure", "config")
-        # Entrypoints may read deployment selectors before typed settings load.
-        is_entrypoint_module = bool(relative_path.parts) and relative_path.parts[0] == "entrypoints"
-        if is_configuration_module or is_entrypoint_module:
+        if is_configuration_module:
             continue
 
         try:

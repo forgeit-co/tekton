@@ -26,11 +26,12 @@ def test_backend_environment_rule_allows_configuration_boundary_reads(tmp_path: 
     backend_environment_reads_are_confined().enforce(tmp_path)
 
 
-def test_backend_environment_rule_allows_entrypoint_bootstrap_reads(tmp_path: Path):
+def test_backend_environment_rule_flags_entrypoint_environment_reads(tmp_path: Path):
     entrypoint_directory = tmp_path / "src/tekton/entrypoints"
     entrypoint_directory.mkdir(parents=True)
     (entrypoint_directory / "api.py").write_text(
         "import os\n\nCONFIG = os.environ.get('SETTING')\n", encoding="utf-8"
     )
 
-    backend_environment_reads_are_confined().enforce(tmp_path)
+    with pytest.raises(AssertionError, match="Process environment read"):
+        backend_environment_reads_are_confined().enforce(tmp_path)

@@ -3,6 +3,7 @@ from tekton_conventions import (
     contracts_from_specification,
     module_filenames_follow_canonical_pattern,
     modules_contain_only_tests,
+    no_tests_under_src,
     package_root,
     pytest_references_use_canonical_names,
 )
@@ -29,6 +30,10 @@ def test_backend_environment_reads_are_confined_to_bootstrap():
 
 def test_test_modules_contain_only_tests():
     modules_contain_only_tests().enforce(package_root(__file__))
+
+
+def test_no_tests_under_src():
+    no_tests_under_src().enforce(package_root(__file__))
 
 
 def test_test_module_filenames_follow_canonical_pattern():

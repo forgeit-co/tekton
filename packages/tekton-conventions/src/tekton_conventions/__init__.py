@@ -8,6 +8,7 @@ from tekton_conventions.import_contracts import (
 from tekton_conventions.layout import (
     module_filenames_follow_canonical_pattern,
     modules_contain_only_tests,
+    no_tests_under_src,
     pytest_references_use_canonical_names,
 )
 from tekton_conventions.workspace import members_carry_convention_gates
@@ -22,6 +23,7 @@ __all__ = [
     "members_carry_convention_gates",
     "module_filenames_follow_canonical_pattern",
     "modules_contain_only_tests",
+    "no_tests_under_src",
     "package_root",
     "pytest_references_use_canonical_names",
 ]

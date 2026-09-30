@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["backend", "edge", "conventions"]
+members = ["backend", "edge", "packages/*"]
 
 [dependency-groups]
 dev = ["basedpyright==1.40.1", "import-linter==2.13", "pytest==9.1.1", "pytest-xdist==3.8.0", "ruff==0.16.2", "tekton-conventions", "httpx2>=2.13.1"]
@@ -25,8 +25,8 @@ include = [
     "backend/scripts",
     "edge/src",
     "edge/tests",
-    "conventions/src",
-    "conventions/tests",
+    "packages/tekton-conventions/src",
+    "packages/tekton-conventions/tests",
 ]
 failOnWarnings = true
 reportMissingTypeStubs = false

@@ -12,7 +12,7 @@ def test_workspace_coverage_flags_member_without_gate(tmp_path: Path):
         '[[package]]\nname = "beta"\nsource = { virtual = "beta" }\n',
         encoding="utf-8",
     )
-    alpha_gate = tmp_path / "alpha/src/tests/architecture/test_conventions.py"
+    alpha_gate = tmp_path / "alpha/tests/architecture/test_conventions.py"
     alpha_gate.parent.mkdir(parents=True)
     alpha_gate.touch()
     (tmp_path / "beta").mkdir()
@@ -29,7 +29,7 @@ def test_workspace_coverage_passes_when_every_member_has_gate(tmp_path: Path):
         encoding="utf-8",
     )
     for member in ("alpha", "beta"):
-        gate = tmp_path / member / "src/tests/architecture/test_conventions.py"
+        gate = tmp_path / member / "tests/architecture/test_conventions.py"
         gate.parent.mkdir(parents=True)
         gate.touch()
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 from tekton_conventions._machinery import Rule, Violation, workspace_members
 
-GATE_PATH = Path("src/tests/architecture/test_conventions.py")
+GATE_PATH = Path("tests/architecture/test_conventions.py")
 
 
 def members_carry_convention_gates() -> Rule:
