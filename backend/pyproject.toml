@@ -1,0 +1,177 @@
+[project]
+name = "tekton-backend"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "PTH", "TID", "PLC0415"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tekton"]
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
+include = ["src", "tests", "scripts"]
+reportMissingTypeStubs = false
+failOnWarnings = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.importlinter]
+root_package = "tekton"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Backend layers"
+type = "layers"
+layers = ["tekton.presentation", "tekton.application", "tekton.domain", "tekton.kernel"]
+
+[[tool.importlinter.contracts]]
+name = "Domain and kernel import no frameworks"
+type = "forbidden"
+source_modules = ["tekton.domain", "tekton.kernel"]
+forbidden_modules = ["fastapi", "sqlalchemy", "pydantic", "starlette", "httpx", "alembic"]
+
+[[tool.importlinter.contracts]]
+name = "Domain privacy follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.privacy"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain knowledge follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.knowledge"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain sources follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.sources"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain documents follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.documents"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain fx follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.fx"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain notifications follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.notifications"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain scheduling follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.scheduling"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain decisions follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.decisions"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain proposals follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.proposals"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain approvals follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.approvals"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain sessions follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.sessions"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain runs follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.runs"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain metering follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.metering"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.runs", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain mail follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.mail"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain localities follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.localities"]
+forbidden_modules = ["tekton.domain.sources", "tekton.domain.documents", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain plots follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.plots"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain eligibility follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.eligibility"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain budget follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.budget"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain tasks follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.tasks"]
+forbidden_modules = ["tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain deadlines follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.deadlines"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.decisions", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.projections", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain projections follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.projections"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.workflow", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
+
+[[tool.importlinter.contracts]]
+name = "Domain workflow follows its DAG row"
+type = "forbidden"
+source_modules = ["tekton.domain.workflow"]
+forbidden_modules = ["tekton.domain.privacy", "tekton.domain.knowledge", "tekton.domain.sources", "tekton.domain.documents", "tekton.domain.fx", "tekton.domain.notifications", "tekton.domain.scheduling", "tekton.domain.proposals", "tekton.domain.approvals", "tekton.domain.sessions", "tekton.domain.runs", "tekton.domain.metering", "tekton.domain.mail", "tekton.domain.localities", "tekton.domain.plots", "tekton.domain.eligibility", "tekton.domain.budget", "tekton.domain.tasks", "tekton.domain.deadlines", "tekton.domain.projections", "tekton.application", "tekton.presentation", "tekton.infrastructure", "tekton.composition", "tekton.entrypoints"]
