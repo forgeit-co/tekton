@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
+import HealthIndicatorContainer from "./components/HealthIndicatorContainer.vue";
 
 const { t } = useI18n();
 </script>
@@ -8,6 +9,7 @@ const { t } = useI18n();
   <main class="home-page">
     <p class="home-page__eyebrow">TEKTON</p>
     <h1>{{ t("ui.home.title") }}</h1>
+    <HealthIndicatorContainer />
   </main>
 </template>
 
@@ -34,7 +36,7 @@ const { t } = useI18n();
 
 h1 {
   max-width: 16ch;
-  margin: 0;
+  margin: 0 0 1rem;
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(2.5rem, 7vw, 5.5rem);
   font-weight: 500;
