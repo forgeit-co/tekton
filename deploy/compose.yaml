@@ -1,0 +1,245 @@
+name: tekton
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  pids_limit: 256
+  mem_limit: 512m
+  cpus: 1.0
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+
+services:
+  s3:
+    image: minio/minio:RELEASE.2024-08-29T01-40-52Z@sha256:0bd79595dbcf155782860716abf4cf79d5ee32a9508b60fa1a88793bbe55b245
+    command: ["server", "/data", "--address", ":9000"]
+    restart: unless-stopped
+    user: "${TEKTON_UID:-10001}:${TEKTON_GID:-10001}"
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/s3-root-user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/s3-root-password
+      MINIO_BROWSER: "off"
+    secrets:
+      - s3-root-user
+      - s3-root-password
+    volumes:
+      - ../s3:/data
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  s3-init:
+    build:
+      context: ..
+      dockerfile: images/backend/Dockerfile
+    entrypoint: ["/usr/local/bin/s3-init"]
+    restart: "no"
+    user: "${TEKTON_UID:-10001}:${TEKTON_GID:-10001}"
+    environment:
+      S3_ENDPOINT_URL: http://s3:9000
+      MINIO_ROOT_USER_FILE: /run/secrets/s3-root-user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/s3-root-password
+      S3_API_USER_FILE: /run/secrets/s3-api-user
+      S3_API_PASSWORD_FILE: /run/secrets/s3-api-password
+      S3_WORKER_USER_FILE: /run/secrets/s3-worker-user
+      S3_WORKER_PASSWORD_FILE: /run/secrets/s3-worker-password
+    secrets:
+      - s3-root-user
+      - s3-root-password
+      - s3-api-user
+      - s3-api-password
+      - s3-worker-user
+      - s3-worker-password
+    depends_on:
+      s3:
+        condition: service_healthy
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: images/backend/Dockerfile
+    command: ["python", "-m", "tekton.entrypoints.migrate"]
+    restart: "no"
+    user: "${TEKTON_UID:-10001}:${TEKTON_GID:-10001}"
+    environment:
+      TEKTON_CONFIGURATION_PATH: /app/deploy/backend.toml
+      TEKTON_SECRETS_DIRECTORY: /run/secrets
+    secrets:
+      - s3-root-user
+      - s3-root-password
+      - s3-api-user
+      - s3-api-password
+      - s3-worker-user
+      - s3-worker-password
+    volumes:
+      - ../data/db:/app/data/db
+      - ../state:/app/state:ro
+      - ../backend/deploy/backend.toml:/app/deploy/backend.toml:ro
+    depends_on:
+      s3-init:
+        condition: service_completed_successfully
+    networks:
+      - data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+
+  backend-api:
+    build:
+      context: ..
+      dockerfile: images/backend/Dockerfile
+    command: ["uvicorn", "tekton.entrypoints.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    <<: *hardening
+    user: "${TEKTON_UID:-10001}:${TEKTON_GID:-10001}"
+    environment:
+      TEKTON_CONFIGURATION_PATH: /app/deploy/backend.toml
+      TEKTON_SECRETS_DIRECTORY: /run/secrets
+    secrets:
+      - s3-api-user
+      - s3-api-password
+    volumes:
+      - ../data/db:/app/data/db
+      - ../data/secrets:/app/data/secrets:ro
+      - ../data/operator:/app/data/operator:ro
+      - ../public_knowledge:/app/public_knowledge:ro
+      - ../backend/deploy/backend.toml:/app/deploy/backend.toml:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - edge
+      - data
+      - public
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  backend-worker:
+    build:
+      context: ..
+      dockerfile: images/backend/Dockerfile
+    command: ["python", "-m", "tekton.entrypoints.worker"]
+    <<: *hardening
+    user: "${TEKTON_UID:-10001}:${TEKTON_GID:-10001}"
+    environment:
+      TEKTON_CONFIGURATION_PATH: /app/deploy/backend.toml
+      TEKTON_SECRETS_DIRECTORY: /run/secrets
+    secrets:
+      - s3-worker-user
+      - s3-worker-password
+    volumes:
+      - ../data/db:/app/data/db
+      - ../data/secrets:/app/data/secrets:ro
+      - ../backend/deploy/backend.toml:/app/deploy/backend.toml:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - data
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: images/frontend/Dockerfile
+    restart: unless-stopped
+    user: "101:101"
+    ports:
+      - "127.0.0.1:${TEKTON_HOST_PORT:-8080}:8080"
+    environment:
+      NGINX_ENTRYPOINT_QUIET_LOGS: "1"
+      NGINX_ENVSUBST_OUTPUT_DIR: /tmp
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    networks:
+      - edge
+      - public
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m,mode=0750,uid=101,gid=101
+      - /var/run:rw,noexec,nosuid,size=4m,mode=0755,uid=101,gid=101
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Future service set is omitted for M0b/M0c: backend-control, backend-mcp,
+  # knowledge-git, llm-proxy, launcher, extractor, and egress-proxy. Add each
+  # behind a later-milestone profile with the dedicated network and credentials.
+
+networks:
+  edge:
+    driver: bridge
+  public:
+    driver: bridge
+  control:
+    internal: true
+  data:
+    internal: true
+  extract:
+    internal: true
+  internet:
+    driver: bridge
+  gateway:
+    driver: bridge
+
+secrets:
+  s3-root-user:
+    file: ./secrets/s3-root-user
+  s3-root-password:
+    file: ./secrets/s3-root-password
+  s3-api-user:
+    file: ./secrets/s3-api-user
+  s3-api-password:
+    file: ./secrets/s3-api-password
+  s3-worker-user:
+    file: ./secrets/s3-worker-user
+  s3-worker-password:
+    file: ./secrets/s3-worker-password

@@ -2,7 +2,8 @@ data/
 s3/
 backups/
 state/
-deploy/secrets/*
+deploy/.env
+deploy/secrets/
 !deploy/secrets/.gitkeep
 .venv/
 __pycache__/
