@@ -43,7 +43,7 @@ jobs:
 
       - name: Read pinned pnpm version
         id: pnpm-version
-        run: echo "version=$(node -p \"require('./frontend/package.json').packageManager.split('@')[1]\")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(node -p 'require("./frontend/package.json").packageManager.split("@")[1]')" >> "$GITHUB_OUTPUT"
 
       - name: Activate pinned pnpm
         run: corepack prepare "pnpm@${{ steps.pnpm-version.outputs.version }}" --activate
